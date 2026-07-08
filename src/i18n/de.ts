@@ -56,6 +56,7 @@ export const de: Translations = {
   sectionVehicle: 'Fahrzeug',
   sectionOwner: 'Halter',
   scanAusweis: 'Fahrzeugausweis scannen',
+  printCard: 'Drucken / PDF',
   ausweisFoto: 'Ausweisfoto',
   scanConfigureFirst: 'Bitte zuerst den Scanner in den Einstellungen einrichten.',
   vorname: 'Vorname',

@@ -17,7 +17,9 @@ import {
   deleteBlob,
   newId,
 } from './storage/jobCardRepository';
-import { renderHtmlToPdfBytes, previewPdfBytes } from './print/printPdfBlob';
+import { renderHtmlToPdfBytes, previewPdfBytes, printJobCard } from './print/printPdfBlob';
+import { buildJobCardHtml } from './print/JobCardDocument';
+import { blobToDataUrl } from './utils/dataUrl';
 import { isElectron } from './platform/detect';
 import { SCAN_PROVIDER_META } from './scan/scanProviders';
 import { getDocScanKey } from './platform/credentialStore';
@@ -437,6 +439,26 @@ function EditView({
     await saveJobCard(next);
   };
 
+  const handlePrint = async () => {
+    try {
+      // Persist first so the printed card reflects the latest edits.
+      await saveJobCard(record);
+      const bs = await getBlobs(record.id);
+      const photos = bs.filter((b) => b.kind === 'photo').sort((a, b) => a.sortOrder - b.sortOrder);
+      const photoDataUrls = await Promise.all(photos.map((p) => blobToDataUrl(p.data)));
+      const html = buildJobCardHtml({
+        record,
+        workshop: settings.workshop,
+        photoDataUrls,
+        createdLabel: formatDate(record.createdAt),
+      });
+      const nr = record.jobNumber || record.id.slice(0, 6);
+      await printJobCard(html, `Arbeitskarte-${nr}.pdf`);
+    } catch (err) {
+      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const selectedParts = new Set(record.damagedParts);
   const toggleDamage = (partId: string) => {
     const next = new Set(selectedParts);
@@ -454,12 +476,20 @@ function EditView({
         >
           <ChevronLeft size={16} /> {t.back}
         </button>
-        <button
-          onClick={handleScanClick}
-          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          <ScanLine size={16} /> {t.scanAusweis}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void handlePrint()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Printer size={16} /> {t.printCard}
+          </button>
+          <button
+            onClick={handleScanClick}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            <ScanLine size={16} /> {t.scanAusweis}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5">
