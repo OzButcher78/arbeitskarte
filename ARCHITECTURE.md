@@ -4,7 +4,9 @@
 
 ```
 main.tsx → <LocaleProvider> → App.tsx (shell: list ↔ editor, settings)
-  editor → DocumentScanModal (scan) · CameraCaptureModal (photos) · CarMap (damage)
+  list   → StatusSelect (inline status change) · preview icon (→ previewJobCard)
+  editor → DocumentScanModal (scan) · CameraCaptureModal (photos) · CarMap (damage) · DateField (dates)
+  scan   → DocumentScanModal → PhotoCompanionPanel (QR phone photo, Electron)
   save/load  → storage/jobCardRepository → Dexie (db.ts)
   scan       → scan/documentScanner → platform/apiBridge → transport (Electron IPC / Android HTTP)
   print      → print/JobCardDocument (HTML) → print/printPdfBlob (printToPDF / system print)
@@ -54,11 +56,31 @@ Three runtimes, resolved by `src/platform/detect.ts`: `browser` (dev), `electron
    `ScanFields` → `ScanResult` (English-ish keys + Halter), sets `lowConfidence`.
 3. **`electron/ipc/scan.ts`** — main-process transport; imports the pure module from
    `../../src/scan/scanProviders` (bundled by esbuild).
-4. **`scan/DocumentScanModal.tsx`** — capture → crop → (optional owner-block redaction, off by
-   default) → confirm/edit → apply. Returns the **full un-redacted original** so the card stores it.
+4. **`scan/DocumentScanModal.tsx`** — capture (camera / file / QR-from-phone) → downscale+encode the
+   **whole** frame → confirm/edit → apply. No crop or redaction step (Grab wants the full image).
+   Hands the full original back so the card stores it.
 5. **`scan/applyScan.ts`** — merges a confirmed `ScanResult` into a `JobCardRecord` (vehicle +
    Halter → Kunde), only overwriting with non-empty values.
-6. **`scan/scanRedaction.ts` / `vinDecode.ts`** — pure crop/redaction geometry; offline WMI/year decode.
+6. **`scan/vinDecode.ts`** — offline WMI/year decode. (`scanRedaction.ts` and the
+   `CameraCaptureModal` `redactionGuide` overlay are retained but no longer wired into any flow —
+   dead since the crop/redaction step was dropped; safe to delete when convenient.)
+
+## LAN photo companion (Phase 5, Electron-only)
+
+Lets a phone on the same LAN shoot a photo straight into the scanner — no cable, no cloud.
+
+- **`electron/companion/server.ts`** — a tiny `node:http` server (bound `0.0.0.0`, ephemeral port).
+  Plain HTTP on purpose: the phone captures via the OS camera through an `<input capture>` (not
+  `getUserMedia`), so no secure-context / self-signed-cert dance. A single active pairing keyed by a
+  random token in the URL path; a new pairing 404s the old one. The received image lives only in
+  memory and is consumed once. `getLanIp()` picks the first private IPv4.
+- **`electron/ipc/companion.ts`** + **`electron/preload.ts`** — `companion:start` (→ `{url, token}`),
+  `companion:poll` (→ the image once, then cleared), `companion:stop`.
+- **`src/platform/companion.ts`** — renderer wrappers; `isCompanionAvailable()` gates the UI to
+  Electron.
+- **`src/scan/PhotoCompanionPanel.tsx`** — renders the phone URL as a QR (`qrcode`), polls every
+  1.5 s, hands the data URL to `DocumentScanModal.runScan` when it arrives, tears the pairing down on
+  close.
 
 ## Car map
 

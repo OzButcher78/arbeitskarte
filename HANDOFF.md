@@ -7,10 +7,10 @@
 
 ## Paste-to-continue prompt
 
-> Read HANDOFF.md, CLAUDE.md and ARCHITECTURE.md, then continue the Arbeitskarte plan. Phases 0–4
-> are done and committed. Do the next open item (see HANDOFF “Next steps”): start with the Android
-> shell + GitHub remote, or Phase 5 (LAN QR companion) — ask me which if unsure. Keep typecheck at
-> zero and both Vite builds green; commit per phase.
+> Read HANDOFF.md, CLAUDE.md and ARCHITECTURE.md, then continue the Arbeitskarte plan. Phases 0–5
+> are done and committed. Do the next open item (see HANDOFF “Next steps”): the Android shell
+> (`npx cap add android`), then the manual smokes. Keep typecheck at zero and both Vite builds green;
+> commit per phase.
 
 ## Status (as of 2026-07-08)
 
@@ -28,20 +28,23 @@ grep clean · NSIS installer built):
   Scanner).
 - **Phase 4** `35523eb` — A4 print (`JobCardDocument` + workshop header) via printToPDF / system print.
 - Docs `4fec4e1`,`e3d1f01`.
+- **Phase 5 + UI improvements** (this session): LAN QR phone companion (`electron/companion/server.ts`,
+  `electron/ipc/companion.ts`, `src/platform/companion.ts`, `src/scan/PhotoCompanionPanel.tsx`, `qrcode`
+  dep); **scanner sends the whole image** (crop/redaction step removed); list **status dropdown** +
+  **preview icon**; **clickable windscreens** (amber) on the car map; **mini date picker**
+  (`src/components/DateField.tsx`). GitHub remote created (private, account `OzButcher78`).
 
 ## Next steps (pick up here)
 
-1. **GitHub remote** (bootstrap step 2): create a **private** repo `arbeitskarte` on the owner's
-   account and `git remote add origin … && git push -u origin main`. Confirm private + account first.
-2. **Android shell:** `npx cap add android` (needs Android SDK), then `npm run build:android` /
+1. **Android shell:** `npx cap add android` (needs Android SDK), then `npm run build:android` /
    `npm run cap:run:android`. Verify the CapacitorHttp scan path + system print on a tablet.
-3. **Phase 5 (optional):** LAN QR phone companion (Electron-only) — lift `electron/companion/*` +
-   `electron/ipc/companion.ts` + `PhotoCompanionModal` + `src/platform/companion.ts`; add `selfsigned`
-   + `qrcode` deps; re-wire a "QR vom Handy" capture source into `DocumentScanModal`. Needs a
-   two-device LAN to verify.
-4. **Manual smokes** (couldn't run headless): install the `.exe`, run a real scan with a valid
-   Infomaniak key (Produkt-ID + key in Settings), toggle the car map, save → restart → search, and
-   do a physical print / "Als PDF speichern".
+2. **Phase 5 real-device smoke:** phone on the shop LAN scans the QR, shoots a Fahrzeugausweis, and it
+   lands in the scanner. Windows Firewall will prompt to allow the port on first run. Server logic +
+   phone page are verified headlessly; only the two-device handshake is untested.
+3. **Manual smokes** (couldn't run headless): install the `.exe`, run a real scan with a valid
+   Infomaniak key (Produkt-ID + key in Settings), toggle the car map (incl. windscreens), use the date
+   picker + list status dropdown + preview icon, save → restart → search, do a physical print / "Als
+   PDF speichern".
 
 ## Commands
 

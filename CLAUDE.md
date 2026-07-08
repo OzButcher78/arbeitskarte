@@ -34,9 +34,11 @@ the device.
    product / package identifiers must return nothing. Never add a path reference to another repo.
 2. **Scanner privacy contract** (`src/scan/scanProviders.ts`): the extraction reads vehicle fields
    **and** the owner (Halter) block + Swiss Stammnummer — this is intentional (the shop needs it).
-   Because owner PII therefore leaves the device to the OCR provider, the Settings compliance ack
-   must stay. A policy / contract / insurance-certificate **number** is never extracted. The BYO API
-   key lives only in the credential store (`doc_scan_key`), **never** in settings/localStorage.
+   The scanner sends the **whole** captured/attached image (there is no crop or owner-block
+   redaction step — Grab wants the Halter data). Because owner PII therefore leaves the device to the
+   OCR provider, the Settings compliance ack **must stay**. A policy / contract /
+   insurance-certificate **number** is never extracted. The BYO API key lives only in the credential
+   store (`doc_scan_key`), **never** in settings/localStorage.
 3. **Print = `printToPDF`, not `window.print()` on Electron.** Desktop renders A4 via an offscreen
    `webContents.printToPDF` and previews the bytes; Android/browser fall back to the system print
    dialog. Never bundle Puppeteer/Chromium.
@@ -70,14 +72,15 @@ Android needs a one-time `npx cap add android` (Android SDK) before `cap` script
 
 | Area | Files |
 |---|---|
-| App shell / editor / list | `src/App.tsx`, `src/main.tsx`, `src/components/ErrorBoundary.tsx` |
-| Platform seam | `src/platform/{detect,apiBridge,credentials,credentialStore,androidBackHandler}.ts` |
+| App shell / editor / list | `src/App.tsx`, `src/main.tsx`, `src/components/{ErrorBoundary,DateField}.tsx` |
+| Platform seam | `src/platform/{detect,apiBridge,credentials,credentialStore,companion,androidBackHandler}.ts` |
 | i18n shim | `src/i18n/{locale.tsx,de.ts}` |
 | Storage | `src/storage/{db,jobCardRepository}.ts`, `src/numbering/jobNumber.ts` |
 | Data model | `src/types/jobcard.ts` |
-| Scanner | `src/scan/{scanProviders,documentScanner,scanRedaction,vinDecode,applyScan,DocumentScanModal}.tsx?`, `electron/ipc/scan.ts` |
+| Scanner | `src/scan/{scanProviders,documentScanner,scanRedaction,vinDecode,applyScan,DocumentScanModal,PhotoCompanionPanel}.tsx?`, `electron/ipc/scan.ts` |
+| LAN photo companion (Phase 5, Electron) | `electron/companion/server.ts`, `electron/ipc/companion.ts`, `src/platform/companion.ts`, `src/scan/PhotoCompanionPanel.tsx` |
 | Capture | `src/capture/{CameraCaptureModal.tsx,useDeviceCameras,compressImage,photoLimits}.ts` |
-| Car map | `src/carmap/{regions,CarMap,svgString}.ts?` |
+| Car map | `src/carmap/{regions,CarMap,svgString}.ts?` (incl. clickable windscreens) |
 | Print | `src/print/{JobCardDocument,printPdfBlob}.ts`, `electron/ipc/{print,printPdf}.ts` |
 | Settings | `src/settings/SettingsModal.tsx` |
 | Electron shell | `electron/{main,preload}.ts`, `electron/ipc/{fs,credentials,types}.ts` |
