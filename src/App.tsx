@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine } from 'lucide-react';
 import { useLocale } from './i18n/locale';
-import type { JobCardRecord, JobStatus } from './types/jobcard';
+import type { JobCardRecord, JobStatus, AppSettings } from './types/jobcard';
+import { DEFAULT_SETTINGS } from './types/jobcard';
 import {
   loadJobCardsList,
   saveJobCard,
@@ -9,10 +10,21 @@ import {
   getJobCard,
   mintJobNumber,
   getSettings,
+  saveSettings,
+  saveBlob,
+  getBlob,
+  deleteBlob,
   newId,
 } from './storage/jobCardRepository';
 import { renderHtmlToPdfBytes, previewPdfBytes } from './print/printPdfBlob';
 import { isElectron } from './platform/detect';
+import { SCAN_PROVIDER_META } from './scan/scanProviders';
+import { getDocScanKey } from './platform/credentialStore';
+import DocumentScanModal from './scan/DocumentScanModal';
+import { applyScanToRecord } from './scan/applyScan';
+import type { ScanResult } from './scan/documentScanner';
+import { dataUrlToBlob } from './utils/dataUrl';
+import ScanSettingsModal from './settings/ScanSettingsModal';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string };
 
@@ -26,20 +38,35 @@ function formatDate(ts: number): string {
   }
 }
 
+/** True when the scanner is fully configured and safe to open. */
+function isScanReady(settings: AppSettings): boolean {
+  if (!settings.docScanEnabled || !settings.docScanComplianceAck) return false;
+  if (!getDocScanKey().trim()) return false;
+  const meta = SCAN_PROVIDER_META[settings.docScanProvider];
+  if (meta.requiresAccountId && !(settings.docScanProviderAccountId || '').trim()) return false;
+  return true;
+}
+
 export default function App() {
   const { t } = useLocale();
   const [view, setView] = useState<View>({ kind: 'list' });
   const [cards, setCards] = useState<JobCardRecord[]>([]);
   const [query, setQuery] = useState('');
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const version = window.electronAPI?.appVersion ?? __APP_VERSION__;
 
   const reload = useCallback(async () => {
     setCards(await loadJobCardsList());
   }, []);
+  const reloadSettings = useCallback(async () => {
+    setSettings(await getSettings());
+  }, []);
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+    void reloadSettings();
+  }, [reload, reloadSettings]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -54,8 +81,8 @@ export default function App() {
   }, [cards, query]);
 
   const handleNew = useCallback(async () => {
-    const settings = await getSettings();
-    const jobNumber = settings.autoJobNumbers ? await mintJobNumber() : '';
+    const s = await getSettings();
+    const jobNumber = s.autoJobNumbers ? await mintJobNumber() : '';
     const now = Date.now();
     const record: JobCardRecord = {
       id: newId(),
@@ -86,8 +113,7 @@ export default function App() {
       return;
     }
     try {
-      const html = buildTestHtml();
-      const bytes = await renderHtmlToPdfBytes(html, 'Arbeitskarte-Test.pdf');
+      const bytes = await renderHtmlToPdfBytes(buildTestHtml(), 'Arbeitskarte-Test.pdf');
       await previewPdfBytes(bytes, 'Arbeitskarte-Test.pdf');
     } catch (err) {
       window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
@@ -102,6 +128,13 @@ export default function App() {
           <span className="text-xs text-slate-400">v{version}</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            title={t.settings}
+          >
+            <Settings size={16} /> {t.settings}
+          </button>
           <button
             onClick={handleTestPrint}
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -129,6 +162,8 @@ export default function App() {
         ) : (
           <EditView
             id={view.id}
+            settings={settings}
+            onOpenSettings={() => setSettingsOpen(true)}
             onDone={async () => {
               await reload();
               setView({ kind: 'list' });
@@ -136,6 +171,16 @@ export default function App() {
           />
         )}
       </main>
+
+      <ScanSettingsModal
+        open={settingsOpen}
+        settings={settings}
+        onSave={async (s) => {
+          await saveSettings(s);
+          setSettings(s);
+        }}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }
@@ -234,13 +279,44 @@ function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-function EditView({ id, onDone }: { id: string; onDone: () => void }) {
+function EditView({
+  id,
+  settings,
+  onOpenSettings,
+  onDone,
+}: {
+  id: string;
+  settings: AppSettings;
+  onOpenSettings: () => void;
+  onDone: () => void;
+}) {
   const { t } = useLocale();
   const [record, setRecord] = useState<JobCardRecord | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
 
   useEffect(() => {
     void getJobCard(id).then((r) => setRecord(r ?? null));
   }, [id]);
+
+  // Load the stored Ausweis image (if any) into an object URL for the thumbnail.
+  useEffect(() => {
+    let url: string | null = null;
+    const ausweisId = record?.ausweisImageId;
+    if (!ausweisId) {
+      setAusweisUrl(null);
+      return;
+    }
+    void getBlob(ausweisId).then((b) => {
+      if (b) {
+        url = URL.createObjectURL(b.data);
+        setAusweisUrl(url);
+      }
+    });
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [record?.ausweisImageId]);
 
   if (!record) {
     return <div className="text-sm text-slate-500">…</div>;
@@ -253,28 +329,58 @@ function EditView({ id, onDone }: { id: string; onDone: () => void }) {
     onDone();
   };
 
+  const handleScanClick = () => {
+    if (isScanReady(settings)) setScanOpen(true);
+    else {
+      window.alert(t.scanConfigureFirst);
+      onOpenSettings();
+    }
+  };
+
+  const handleScanApply = async (fields: ScanResult, originalImageDataUrl: string) => {
+    let next = applyScanToRecord(record, fields);
+    try {
+      const blob = await dataUrlToBlob(originalImageDataUrl);
+      if (record.ausweisImageId) await deleteBlob(record.ausweisImageId).catch(() => {});
+      const blobId = newId();
+      await saveBlob({
+        id: blobId,
+        jobcardId: record.id,
+        sortOrder: -1,
+        kind: 'ausweis',
+        mime: blob.type || 'image/jpeg',
+        data: blob,
+        createdAt: Date.now(),
+      });
+      next = { ...next, ausweisImageId: blobId };
+    } catch (err) {
+      console.warn('[scan] Ausweisbild konnte nicht gespeichert werden:', err);
+    }
+    setRecord(next);
+    await saveJobCard(next); // persist scanned fields + Ausweis link immediately
+  };
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <button
-        onClick={onDone}
-        className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800"
-      >
-        <ChevronLeft size={16} /> {t.back}
-      </button>
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          onClick={onDone}
+          className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800"
+        >
+          <ChevronLeft size={16} /> {t.back}
+        </button>
+        <button
+          onClick={handleScanClick}
+          className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          <ScanLine size={16} /> {t.scanAusweis}
+        </button>
+      </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-6">
-        <h2 className="mb-5 text-base font-bold">
-          {t.editCard} {record.jobNumber && <span className="text-slate-400">· {record.jobNumber}</span>}
-        </h2>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={t.jobNumber}>
-            <input
-              value={record.jobNumber}
-              onChange={(e) => update({ jobNumber: e.target.value })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
-            />
-          </Field>
+      <div className="space-y-5">
+        {/* Kopf */}
+        <Section title={t.sectionKopf}>
+          <TextField record={record} update={update} field="jobNumber" label={t.jobNumber} />
           <Field label={t.colStatus}>
             <select
               value={record.status}
@@ -288,42 +394,77 @@ function EditView({ id, onDone }: { id: string; onDone: () => void }) {
               ))}
             </select>
           </Field>
-          <Field label={t.fieldName}>
-            <input
-              value={record.name ?? ''}
-              onChange={(e) => update({ name: e.target.value })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
-            />
-          </Field>
-          <Field label={t.fieldPlate}>
-            <input
-              value={record.kontrollschild ?? ''}
-              onChange={(e) => update({ kontrollschild: e.target.value.toUpperCase() })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase outline-none focus:border-blue-500"
-            />
-          </Field>
-        </div>
+        </Section>
 
-        <p className="mt-4 text-xs text-slate-400">
-          Phase 0 — Grundgerüst. Vollständiges Formular, Scanner, Fahrzeug-Grafik und Druck folgen
-          in den nächsten Phasen.
-        </p>
+        {/* Kunde / Halter */}
+        <Section title={t.sectionKunde}>
+          <TextField record={record} update={update} field="name" label={t.colName} />
+          <TextField record={record} update={update} field="vorname" label={t.vorname} />
+          <TextField record={record} update={update} field="strasse" label={t.strasse} />
+          <TextField record={record} update={update} field="plzOrt" label={t.plzOrt} />
+          <TextField record={record} update={update} field="telefon" label={t.telefon} />
+        </Section>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onDone}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {t.cancel}
-          </button>
-          <button
-            onClick={handleSave}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            {t.save}
-          </button>
-        </div>
+        {/* Fahrzeug */}
+        <Section title={t.sectionVehicle}>
+          <TextField record={record} update={update} field="fahrzeugmarke" label={t.fahrzeugmarke} />
+          <TextField record={record} update={update} field="fahrzeugtyp" label={t.fahrzeugtyp} />
+          <TextField record={record} update={update} field="kontrollschild" label={t.kontrollschild} upper />
+          <TextField record={record} update={update} field="vin" label={t.vin} upper />
+          <TextField record={record} update={update} field="stammnummer" label={t.stammnummer} />
+          <TextField record={record} update={update} field="farbe" label={t.farbe} />
+          <TextField record={record} update={update} field="erstzulassung" label={t.erstzulassung} />
+          <TextField record={record} update={update} field="versicherung" label={t.versicherung} />
+        </Section>
+
+        {/* Ausweis thumbnail */}
+        {ausweisUrl && (
+          <Section title={t.ausweisFoto}>
+            <div className="sm:col-span-2">
+              <img
+                src={ausweisUrl}
+                alt={t.ausweisFoto}
+                className="max-h-64 rounded-lg border border-slate-200 object-contain"
+              />
+            </div>
+          </Section>
+        )}
       </div>
+
+      <div className="mt-6 flex justify-end gap-2">
+        <button
+          onClick={onDone}
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {t.cancel}
+        </button>
+        <button
+          onClick={handleSave}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          {t.save}
+        </button>
+      </div>
+
+      <DocumentScanModal
+        open={scanOpen}
+        provider={settings.docScanProvider}
+        apiKey={getDocScanKey()}
+        accountId={settings.docScanProviderAccountId}
+        country="CH"
+        redactOwner={settings.docScanRedactOwner}
+        onApply={(fields, original) => void handleScanApply(fields, original)}
+        onClose={() => setScanOpen(false)}
+      />
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </div>
   );
 }
@@ -331,11 +472,37 @@ function EditView({ id, onDone }: { id: string; onDone: () => void }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
       {children}
     </label>
+  );
+}
+
+/** Text input bound to a string field of the record. */
+function TextField({
+  record,
+  update,
+  field,
+  label,
+  upper,
+}: {
+  record: JobCardRecord;
+  update: (patch: Partial<JobCardRecord>) => void;
+  field: keyof JobCardRecord;
+  label: string;
+  upper?: boolean;
+}) {
+  const value = (record[field] as string | undefined) ?? '';
+  return (
+    <Field label={label}>
+      <input
+        value={value}
+        onChange={(e) =>
+          update({ [field]: upper ? e.target.value.toUpperCase() : e.target.value } as Partial<JobCardRecord>)
+        }
+        className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 ${upper ? 'uppercase' : ''}`}
+      />
+    </Field>
   );
 }
 
@@ -355,7 +522,6 @@ function buildTestHtml(): string {
     <h1>Arbeitskarte — Test-Druck</h1>
     <div class="sub">printToPDF-Rundlauf funktioniert.</div>
     <p>Erzeugt: ${now}</p>
-    <p>Diese Seite bestätigt, dass HTML → PDF (A4) im Hauptprozess läuft.</p>
   </div>
 </body></html>`;
 }
