@@ -40,3 +40,26 @@ export async function previewPdfBytes(bytes: Uint8Array, title?: string): Promis
   // Revoke after a beat so the new tab has time to load.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+/**
+ * Print/preview a self-contained job-card HTML page.
+ *   • Electron: render → PDF bytes → native preview window (Drucken / Als PDF
+ *     speichern).
+ *   • Android / browser: open the page and invoke the system print dialog
+ *     (the OS offers "Drucken" and "Als PDF speichern"). No PDF engine bundled.
+ */
+export async function printJobCard(html: string, filename: string): Promise<void> {
+  if (isElectron() && window.electronAPI) {
+    const bytes = await renderHtmlToPdfBytes(html, filename);
+    await previewPdfBytes(bytes, filename);
+    return;
+  }
+  const win = window.open('', '_blank');
+  if (!win) throw new Error('Das Druckfenster wurde blockiert. Bitte Pop-ups erlauben.');
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  // Let images/SVG lay out before invoking the print dialog.
+  setTimeout(() => { try { win.print(); } catch { /* user can print manually */ } }, 500);
+}
