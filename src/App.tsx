@@ -25,6 +25,8 @@ import { applyScanToRecord } from './scan/applyScan';
 import type { ScanResult } from './scan/documentScanner';
 import { dataUrlToBlob } from './utils/dataUrl';
 import ScanSettingsModal from './settings/ScanSettingsModal';
+import CarMap from './carmap/CarMap';
+import { regionLabel } from './carmap/regions';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string };
 
@@ -360,6 +362,14 @@ function EditView({
     await saveJobCard(next); // persist scanned fields + Ausweis link immediately
   };
 
+  const selectedParts = new Set(record.damagedParts);
+  const toggleDamage = (partId: string) => {
+    const next = new Set(selectedParts);
+    if (next.has(partId)) next.delete(partId);
+    else next.add(partId);
+    update({ damagedParts: Array.from(next) });
+  };
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
@@ -416,6 +426,43 @@ function EditView({
           <TextField record={record} update={update} field="erstzulassung" label={t.erstzulassung} />
           <TextField record={record} update={update} field="versicherung" label={t.versicherung} />
         </Section>
+
+        {/* Schaden — car map */}
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionSchaden}</h2>
+            <span className="text-xs text-slate-400">{t.schadenHint}</span>
+          </div>
+          <div className="mx-auto max-w-xs">
+            <CarMap selected={selectedParts} onToggle={toggleDamage} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {record.damagedParts.length === 0 ? (
+              <span className="text-xs text-slate-400">{t.noDamageSelected}</span>
+            ) : (
+              record.damagedParts.map((partId) => (
+                <button
+                  key={partId}
+                  onClick={() => toggleDamage(partId)}
+                  className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-200"
+                  title={t.delete}
+                >
+                  {regionLabel(partId)} ✕
+                </button>
+              ))
+            )}
+          </div>
+          <div className="mt-4">
+            <Field label={t.schadenNotiz}>
+              <textarea
+                value={record.schadenNotiz ?? ''}
+                onChange={(e) => update({ schadenNotiz: e.target.value })}
+                rows={2}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
+            </Field>
+          </div>
+        </div>
 
         {/* Ausweis thumbnail */}
         {ausweisUrl && (
