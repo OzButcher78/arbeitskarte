@@ -23,7 +23,16 @@ export interface CarRegion {
   shape: RegionShape;
   /** Render the label text inside the shape (used for the bumper zones). */
   labelInside?: boolean;
+  /** Fill colour when selected (defaults to damage red). */
+  selectedFill?: string;
+  /** Stroke colour when selected (defaults to damage red). */
+  selectedStroke?: string;
 }
+
+// Glass panels (windscreen / rear window) highlight amber, not damage-red, so a
+// glass replacement reads differently from body damage on the same diagram.
+const GLASS_FILL = '#f59e0b';
+const GLASS_STROKE = '#d97706';
 
 const INK = '#1e293b';
 const WHITE = '#ffffff';
@@ -70,7 +79,14 @@ export const REGIONS: CarRegion[] = [
   { id: 'quarterPanelR', label: 'Seitenwand HR', shape: { kind: 'path', d: `M947.9,541v52.3l89.4,101.7c0.4,0.4,0.6,0.9,0.6,1.5c0.5,8.1,1.5,22.1,2.7,39.4 c0,0.6,4.1,57.2,14.1,98c0.7,2.6,2.2,8.8,6.4,15.8c2.1,3.4,4.5,6.6,7.4,9.4c2,2,4.7,3.2,7.5,3.2h81.8v-0.2c6,0,10.9-4.9,10.9-10.9 V725.9c-16.2,0.5-30.8-3.4-42.4-11.2c-17.4-11.8-29.6-33.6-32.7-58.4c-3.2-25.5,3.6-49.7,18.5-66.3c19.1-21.3,46.8-25,60.1-25.4 v-9.7c-18.1,2.2-35.6,7.2-52.2,15c-16.2,7.6-31.1,17.6-44.2,29.8c-0.5,0.4-1.1,0.7-1.7,0.7h-29.7c-5.1,5.9-10.9,9.5-17,11 C1003.3,617,972,589,947.9,541z` } },
   { id: 'schwellerR', label: 'Schweller R', shape: { kind: 'polygon', points: `1177.2,564.7 1185.2,564.7 1185.2,166.6 1177.4,166.6 1177.3,403.7` } },
   { id: 'heckStossstange', label: 'Heckstossstange', labelInside: true, shape: { kind: 'rect', x: 605, y: 938, w: 335, h: 78, rx: 20 } },
+  // Verglasung (Scheibenersatz) — sit between hood/roof (front) and roof/deck
+  // (rear); highlight amber to distinguish glass replacement from body damage.
+  { id: 'windschutzscheibe', label: 'Windschutzscheibe', selectedFill: GLASS_FILL, selectedStroke: GLASS_STROKE, shape: { kind: 'polygon', points: `663,284 883,284 858,214 688,214` } },
+  { id: 'heckscheibe', label: 'Heckscheibe', selectedFill: GLASS_FILL, selectedStroke: GLASS_STROKE, shape: { kind: 'polygon', points: `663,590 883,590 861,676 685,676` } },
 ];
+
+/** Region ids that represent glass panels (amber highlight, not damage-red). */
+export const GLASS_REGION_IDS: ReadonlySet<string> = new Set(['windschutzscheibe', 'heckscheibe']);
 
 export const REGION_LABELS: Record<string, string> = Object.fromEntries(REGIONS.map((r) => [r.id, r.label]));
 

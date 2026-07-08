@@ -26,6 +26,7 @@ export const de: Translations = {
   colUpdated: 'Geändert',
   open: 'Öffnen',
   delete: 'Löschen',
+  preview: 'Vorschau',
   confirmDelete: 'Diese Arbeitskarte wirklich löschen?',
 
   // Status labels
@@ -119,6 +120,20 @@ export const de: Translations = {
   addPhotoCamera: 'Kamera',
   addPhotoFile: 'Datei',
   photoMaxReached: 'Maximale Fotoanzahl erreicht.',
+
+  // LAN photo companion (Phase 5)
+  scanCompanion: 'QR vom Handy',
+  companionTitle: 'Foto vom Handy',
+  companionSubtitle: 'QR-Code mit dem Handy scannen',
+  companionStarting: 'Verbindung wird gestartet …',
+  companionScanHint: 'Mit der Kamera-App des Handys scannen, ein Foto aufnehmen – es erscheint automatisch hier.',
+  companionWaiting: 'Warte auf Foto vom Handy …',
+  companionOrType: 'Oder im Browser öffnen:',
+  companionSlowHint: 'Noch kein Foto empfangen. Bitte prüfen: gleiches WLAN, und beim ersten Mal die Windows-Firewall-Abfrage erlauben.',
+  companionSameWifi: 'Handy und Computer müssen im selben WLAN sein.',
+  companionNoLan: 'Keine Netzwerkverbindung gefunden. Der Computer muss mit einem WLAN/LAN verbunden sein.',
+  companionUnavailable: 'Diese Funktion ist nur in der Desktop-App verfügbar.',
+  companionStartFailed: 'Die Verbindung konnte nicht gestartet werden.',
 
   // Settings modal
   settingsTitle: 'Einstellungen',

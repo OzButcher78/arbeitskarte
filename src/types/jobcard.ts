@@ -100,7 +100,8 @@ export interface AppSettings {
   /** Infomaniak Produkt-ID (non-secret). The key lives in the credential store. */
   docScanProviderAccountId?: string;
   docScanComplianceAck: boolean;
-  /** Redact the owner block? Default false — Grab wants the Halter data. */
+  /** Vestigial: owner-block redaction. The scanner now always sends the whole
+   *  image (no crop/redaction step); kept only so old stores keep merging. */
   docScanRedactOwner: boolean;
 }
 

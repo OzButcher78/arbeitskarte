@@ -46,6 +46,14 @@ const api = {
   scanDocument: (args: unknown): Promise<IpcResult> =>
     ipcRenderer.invoke('scan:document', args),
 
+  // ── LAN photo companion (Phase 5) ────────────────────────────────────────
+  // Pair a phone on the same LAN via QR to shoot a photo straight into the app.
+  companion: {
+    start: (): Promise<IpcResult> => ipcRenderer.invoke('companion:start'),
+    poll: (token: string): Promise<IpcResult> => ipcRenderer.invoke('companion:poll', { token }),
+    stop: (): Promise<IpcResult> => ipcRenderer.invoke('companion:stop'),
+  },
+
   // ── Local filesystem ─────────────────────────────────────────────────────
   fs: {
     pickDirectory: (): Promise<IpcResult> => ipcRenderer.invoke('fs:pickDirectory'),

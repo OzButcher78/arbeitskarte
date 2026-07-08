@@ -23,7 +23,7 @@ const VIEWBOX = '238 -199.2 1072.3 1238.1';
 export default function CarMap({ selected, onToggle, regions = REGIONS, className, readOnly }: Props) {
   const [hover, setHover] = useState<string | null>(null);
 
-  const fillFor = (id: string) => (selected.has(id) ? '#ef4444' : '#3b82f6');
+  const fillFor = (r: CarRegion) => (selected.has(r.id) ? (r.selectedFill ?? '#ef4444') : '#3b82f6');
   const opacityFor = (id: string) => {
     const on = selected.has(id);
     if (hover === id && !readOnly) return on ? 0.62 : 0.42;
@@ -31,13 +31,13 @@ export default function CarMap({ selected, onToggle, regions = REGIONS, classNam
   };
 
   const commonProps = (r: CarRegion) => ({
-    fill: fillFor(r.id),
+    fill: fillFor(r),
     style: {
       opacity: opacityFor(r.id),
       cursor: readOnly ? 'default' : 'pointer',
       transition: 'opacity 0.15s ease',
     } as React.CSSProperties,
-    stroke: selected.has(r.id) ? '#dc2626' : 'transparent',
+    stroke: selected.has(r.id) ? (r.selectedStroke ?? '#dc2626') : 'transparent',
     strokeWidth: 2,
     onClick: readOnly ? undefined : () => onToggle(r.id),
     onMouseEnter: readOnly ? undefined : () => setHover(r.id),

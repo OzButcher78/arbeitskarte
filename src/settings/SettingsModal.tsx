@@ -228,10 +228,6 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
                   <a href={meta.dpaUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline">DPA <ExternalLink size={11} /></a>
                 </span>
               </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-sm text-slate-700">{L('scanRedactOwnerToggle', 'Halterblock vor dem Senden abdecken')}</span>
-                <input type="checkbox" checked={draft.docScanRedactOwner} onChange={(e) => update({ docScanRedactOwner: e.target.checked })} className="w-5 h-5" />
-              </label>
             </div>
           </section>
         </div>

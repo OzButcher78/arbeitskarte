@@ -19,6 +19,11 @@ declare global {
     printToPdf(args: { html: string; filename?: string }): Promise<IpcResult>;
     printPdf(args: { pdfBytes: Uint8Array; title?: string }): Promise<IpcResult>;
     scanDocument(args: unknown): Promise<IpcResult>;
+    companion: {
+      start(): Promise<IpcResult>;
+      poll(token: string): Promise<IpcResult>;
+      stop(): Promise<IpcResult>;
+    };
     fs: {
       pickDirectory(): Promise<IpcResult>;
       saveFile(args: unknown): Promise<IpcResult>;
