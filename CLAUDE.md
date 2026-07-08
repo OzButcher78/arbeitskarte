@@ -30,8 +30,8 @@ the device.
 ## Critical rules
 
 1. **No coupling to other repos.** This app copied/adapted modules from an internal source app,
-   but must stand alone: `grep -rEi "pdrkalk|pdr kalk|bss pdr" src electron *.ts *.cjs` must return
-   nothing. Never add a path reference to another repo.
+   but must stand alone: a case-insensitive grep across `src` + `electron` for the source app's
+   product / package identifiers must return nothing. Never add a path reference to another repo.
 2. **Scanner privacy contract** (`src/scan/scanProviders.ts`): the extraction reads vehicle fields
    **and** the owner (Halter) block + Swiss Stammnummer — this is intentional (the shop needs it).
    Because owner PII therefore leaves the device to the OCR provider, the Settings compliance ack
