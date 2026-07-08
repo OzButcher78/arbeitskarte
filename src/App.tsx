@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X } from 'lucide-react';
 import { useLocale } from './i18n/locale';
 import type { JobCardRecord, JobStatus, AppSettings } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
@@ -13,6 +13,7 @@ import {
   saveSettings,
   saveBlob,
   getBlob,
+  getBlobs,
   deleteBlob,
   newId,
 } from './storage/jobCardRepository';
@@ -24,9 +25,12 @@ import DocumentScanModal from './scan/DocumentScanModal';
 import { applyScanToRecord } from './scan/applyScan';
 import type { ScanResult } from './scan/documentScanner';
 import { dataUrlToBlob } from './utils/dataUrl';
-import ScanSettingsModal from './settings/ScanSettingsModal';
+import SettingsModal from './settings/SettingsModal';
 import CarMap from './carmap/CarMap';
 import { regionLabel } from './carmap/regions';
+import CameraCaptureModal from './capture/CameraCaptureModal';
+import { compressImage } from './capture/compressImage';
+import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string };
 
@@ -174,7 +178,7 @@ export default function App() {
         )}
       </main>
 
-      <ScanSettingsModal
+      <SettingsModal
         open={settingsOpen}
         settings={settings}
         onSave={async (s) => {
@@ -295,11 +299,39 @@ function EditView({
   const { t } = useLocale();
   const [record, setRecord] = useState<JobCardRecord | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const [photoCamOpen, setPhotoCamOpen] = useState(false);
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
+  const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
+  const photoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void getJobCard(id).then((r) => setRecord(r ?? null));
   }, [id]);
+
+  // Load additional photo thumbnails whenever the photo set changes.
+  const photoKey = (record?.photoIds ?? []).join(',');
+  useEffect(() => {
+    if (!record) return;
+    const jobId = record.id;
+    let cancelled = false;
+    const urls: string[] = [];
+    void getBlobs(jobId).then((bs) => {
+      if (cancelled) return;
+      const thumbs = bs
+        .filter((b) => b.kind === 'photo')
+        .map((b) => {
+          const u = URL.createObjectURL(b.data);
+          urls.push(u);
+          return { id: b.id, url: u };
+        });
+      setPhotoThumbs(thumbs);
+    });
+    return () => {
+      cancelled = true;
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.id, photoKey]);
 
   // Load the stored Ausweis image (if any) into an object URL for the thumbnail.
   useEffect(() => {
@@ -362,6 +394,49 @@ function EditView({
     await saveJobCard(next); // persist scanned fields + Ausweis link immediately
   };
 
+  const remainingPhotoSlots = Math.max(0, MAX_PHOTOS_PER_JOB - record.photoIds.length);
+
+  const addPhotos = async (files: File[]) => {
+    if (files.length === 0) return;
+    const existing = await getBlobs(record.id);
+    let sort = existing.reduce((m, b) => Math.max(m, b.sortOrder), 0);
+    const newIds: string[] = [];
+    for (const f of files) {
+      if (record.photoIds.length + newIds.length >= MAX_PHOTOS_PER_JOB) break;
+      try {
+        const c = await compressImage(f, 'standard');
+        const blob = await dataUrlToBlob(c.dataUrl);
+        const blobId = newId();
+        sort += 1;
+        await saveBlob({
+          id: blobId,
+          jobcardId: record.id,
+          sortOrder: sort,
+          kind: 'photo',
+          mime: 'image/jpeg',
+          data: blob,
+          sha256: c.contentHash,
+          createdAt: Date.now(),
+        });
+        newIds.push(blobId);
+      } catch (err) {
+        console.warn('[photo] add failed:', err);
+      }
+    }
+    if (newIds.length) {
+      const next = { ...record, photoIds: [...record.photoIds, ...newIds] };
+      setRecord(next);
+      await saveJobCard(next);
+    }
+  };
+
+  const removePhoto = async (photoId: string) => {
+    await deleteBlob(photoId).catch(() => {});
+    const next = { ...record, photoIds: record.photoIds.filter((p) => p !== photoId) };
+    setRecord(next);
+    await saveJobCard(next);
+  };
+
   const selectedParts = new Set(record.damagedParts);
   const toggleDamage = (partId: string) => {
     const next = new Set(selectedParts);
@@ -404,6 +479,12 @@ function EditView({
               ))}
             </select>
           </Field>
+          <TextField record={record} update={update} field="repDatum" label={t.repDatum} />
+          <TextField record={record} update={update} field="abholdatum" label={t.abholdatum} />
+          <TextField record={record} update={update} field="schluesselCode" label={t.schluesselCode} />
+          <TextField record={record} update={update} field="ersatzwagenKopf" label={t.ersatzwagenKopf} />
+          <TextField record={record} update={update} field="kilometerstand" label={t.kilometerstand} />
+          <CheckField record={record} update={update} field="automat" label={t.automat} />
         </Section>
 
         {/* Kunde / Halter */}
@@ -425,6 +506,9 @@ function EditView({
           <TextField record={record} update={update} field="farbe" label={t.farbe} />
           <TextField record={record} update={update} field="erstzulassung" label={t.erstzulassung} />
           <TextField record={record} update={update} field="versicherung" label={t.versicherung} />
+          <TextField record={record} update={update} field="schadenNr" label={t.schadenNr} />
+          <CheckField record={record} update={update} field="ersatzteileJa" label={t.ersatzteileJa} />
+          <TextField record={record} update={update} field="ersatzteileText" label={t.ersatzteileText} />
         </Section>
 
         {/* Schaden — car map */}
@@ -462,6 +546,74 @@ function EditView({
               />
             </Field>
           </div>
+        </div>
+
+        {/* Arbeiten / Material (back of card) */}
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionArbeiten}</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TextAreaField record={record} update={update} field="spenglerarbeit" label={t.spenglerarbeit} />
+            <TextAreaField record={record} update={update} field="ersatzteileKleinmat" label={t.ersatzteileKleinmat} />
+            <TextAreaField record={record} update={update} field="lackierarbeit" label={t.lackierarbeit} />
+            <TextAreaField record={record} update={update} field="lackmaterial" label={t.lackmaterial} />
+            <TextAreaField record={record} update={update} field="kittsatz" label={t.kittsatz} />
+            <TextAreaField record={record} update={update} field="nebenarbeiten" label={t.nebenarbeiten} />
+            <TextAreaField record={record} update={update} field="schneidfaden" label={t.schneidfaden} />
+            <TextAreaField record={record} update={update} field="arbeitenErsatzwagen" label={t.arbeitenErsatzwagen} />
+            <div className="sm:col-span-2">
+              <TextAreaField record={record} update={update} field="notes" label={t.notes} rows={3} />
+            </div>
+          </div>
+        </div>
+
+        {/* Fotos */}
+        <div className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionFotos}</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPhotoCamOpen(true)}
+                disabled={remainingPhotoSlots === 0}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <Camera size={14} /> {t.addPhotoCamera}
+              </button>
+              <button
+                onClick={() => photoFileRef.current?.click()}
+                disabled={remainingPhotoSlots === 0}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ImagePlus size={14} /> {t.addPhotoFile}
+              </button>
+              <input
+                ref={photoFileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => { void addPhotos(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+              />
+            </div>
+          </div>
+          {photoThumbs.length === 0 ? (
+            <p className="text-xs text-slate-400">{remainingPhotoSlots === 0 ? t.photoMaxReached : '—'}</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {photoThumbs.map((p) => (
+                <div key={p.id} className="relative">
+                  <img src={p.url} alt="" className="h-24 w-full rounded-lg border border-slate-200 object-cover" />
+                  <button
+                    onClick={() => void removePhoto(p.id)}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-400"
+                    title={t.delete}
+                    aria-label={t.delete}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Ausweis thumbnail */}
@@ -503,6 +655,14 @@ function EditView({
         onApply={(fields, original) => void handleScanApply(fields, original)}
         onClose={() => setScanOpen(false)}
       />
+
+      {photoCamOpen && (
+        <CameraCaptureModal
+          remainingSlots={remainingPhotoSlots}
+          onCapture={(files) => { setPhotoCamOpen(false); void addPhotos(files); }}
+          onCancel={() => setPhotoCamOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -550,6 +710,59 @@ function TextField({
         className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 ${upper ? 'uppercase' : ''}`}
       />
     </Field>
+  );
+}
+
+/** Multiline text bound to a string field of the record. */
+function TextAreaField({
+  record,
+  update,
+  field,
+  label,
+  rows = 2,
+}: {
+  record: JobCardRecord;
+  update: (patch: Partial<JobCardRecord>) => void;
+  field: keyof JobCardRecord;
+  label: string;
+  rows?: number;
+}) {
+  const value = (record[field] as string | undefined) ?? '';
+  return (
+    <Field label={label}>
+      <textarea
+        value={value}
+        rows={rows}
+        onChange={(e) => update({ [field]: e.target.value } as Partial<JobCardRecord>)}
+        className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+      />
+    </Field>
+  );
+}
+
+/** Checkbox bound to a boolean field of the record. */
+function CheckField({
+  record,
+  update,
+  field,
+  label,
+}: {
+  record: JobCardRecord;
+  update: (patch: Partial<JobCardRecord>) => void;
+  field: keyof JobCardRecord;
+  label: string;
+}) {
+  const checked = Boolean(record[field]);
+  return (
+    <label className="flex items-center gap-2 self-end pb-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => update({ [field]: e.target.checked } as Partial<JobCardRecord>)}
+        className="h-4 w-4"
+      />
+      <span className="text-sm text-slate-700">{label}</span>
+    </label>
   );
 }
 

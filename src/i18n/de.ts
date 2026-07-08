@@ -89,4 +89,47 @@ export const de: Translations = {
   halterOrt: 'Ort',
   close: 'Schliessen',
   retry: 'Erneut versuchen',
+
+  // Kopf extras (Phase 3)
+  repDatum: 'Rep.-Datum',
+  abholdatum: 'Abholdatum',
+  schluesselCode: 'Schlüssel-Code',
+  ersatzwagenKopf: 'Ersatzwagen',
+  automat: 'Automat',
+  kilometerstand: 'Kilometerstand',
+  schadenNr: 'Schaden-Nr.',
+  ersatzteileJa: 'Ersatzteile',
+  ersatzteileText: 'Ersatzteile (Bemerkung)',
+
+  // Arbeiten / Material (back of card)
+  sectionArbeiten: 'Arbeiten / Material',
+  spenglerarbeit: 'Spenglerarbeit',
+  ersatzteileKleinmat: 'Ersatzteile / Kleinmat.',
+  lackierarbeit: 'Lackierarbeit',
+  lackmaterial: 'Lackmaterial',
+  kittsatz: 'Kittsatz',
+  nebenarbeiten: 'Nebenarbeiten (Hohlraum / Porto)',
+  schneidfaden: 'Schneidfaden',
+  arbeitenErsatzwagen: 'Ersatzwagen',
+  notes: 'Bemerkungen',
+
+  // Photos
+  sectionFotos: 'Fotos',
+  addPhotoCamera: 'Kamera',
+  addPhotoFile: 'Datei',
+  photoMaxReached: 'Maximale Fotoanzahl erreicht.',
+
+  // Settings modal
+  settingsTitle: 'Einstellungen',
+  secBetrieb: 'Betrieb',
+  secNummerierung: 'Nummerierung',
+  secScanner: 'Fahrzeugausweis-Scanner',
+  firma: 'Firma',
+  email: 'E-Mail',
+  website: 'Website',
+  logo: 'Logo',
+  logoUpload: 'Logo wählen',
+  logoRemove: 'Entfernen',
+  autoNumbers: 'Automatische Nummerierung',
+  numberPreview: 'Nächste Karte',
 };
