@@ -10,9 +10,11 @@ Several modules were **copied and adapted** from an existing internal Electron/C
 this repo owns its copies and its data model. Adaptations of note:
 
 - Scanner extraction **extended** to read the owner (Halter) block + Swiss Stammnummer.
-- Owner-block redaction turned **opt-in / off by default** (the shop wants the Halter data).
+- Owner-block redaction **and the crop step removed** — the scanner sends the whole captured/attached
+  image (the shop wants the Halter data). `scanRedaction.ts` now only feeds the camera framing guide.
 - Puppeteer PDF replaced by `webContents.printToPDF`.
-- Audit logging + LAN photo companion **stripped** from the scan modal.
+- Audit logging stripped from the scan modal; a fresh, dependency-light **LAN photo companion (QR)**
+  added as Phase 5 (`qrcode` + a `node:http` server; plain HTTP over LAN, no self-signed cert).
 - Android secure-store plugin simplified to `@capacitor/preferences` for the single BYO key.
 
 ## OCR providers (BYO key)
@@ -58,9 +60,11 @@ Settings → Betrieb (incl. logo for the print header). Job-number default prefi
 
 ## Open items
 
-- **Phase 5 (optional):** LAN QR phone companion (Electron-only) — not built; needs a two-device LAN
-  to verify (`selfsigned` + `qrcode` deps + native server).
+- **Phase 5 built** (LAN QR phone companion, Electron-only). Server logic + phone page verified
+  headlessly (unit smoke, offscreen render); the real two-device handshake (phone camera over the
+  shop LAN, Windows-Firewall allow-prompt on first run) still needs a manual smoke.
 - **Android shell** not scaffolded (`npx cap add android` pending).
-- **GitHub remote** not created (bootstrap step: private repo on the owner's account).
 - **Manual smokes** (can't run headless): real scan with a valid Infomaniak key; interactive car-map
-  toggling; save → restart → search persistence; physical print / "Als PDF speichern".
+  toggling (incl. the new windscreen zones); the mini date picker; the list status dropdown + preview
+  icon; save → restart → search persistence; physical print / "Als PDF speichern"; QR companion from a
+  real phone.
