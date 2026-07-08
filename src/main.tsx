@@ -2,8 +2,14 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LocaleProvider } from './i18n/locale';
+import { primeCapacitorCredentials } from './platform/credentials';
+import { CREDENTIAL_STORE_KEYS } from './platform/credentialStore';
 import './index.css';
 import App from './App';
+
+// Android only: warm the credential cache so getDocScanKey() returns the real
+// value synchronously. No-op on Electron (preload snapshot) and browser.
+void primeCapacitorCredentials([...CREDENTIAL_STORE_KEYS]);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

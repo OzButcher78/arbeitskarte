@@ -17,6 +17,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'Arbeitskarte'));
 
 import { printPdfIpc } from './ipc/print';
 import { printToPdfIpc } from './ipc/printPdf';
+import { scanDocumentIpc } from './ipc/scan';
 import {
   pickDirectoryIpc,
   saveFileIpc,
@@ -73,6 +74,10 @@ let mainWindow: BrowserWindow | null = null;
 function registerIpcHandlers(): void {
   ipcMain.handle('pdf:printToPdf', (_event, args) => printToPdfIpc(args));
   ipcMain.handle('pdf:print', (_event, args) => printPdfIpc(args));
+
+  // Vehicle Document Scanner — direct-to-provider vision call from the main
+  // process (image + BYO key never touch third-party infra).
+  ipcMain.handle('scan:document', (_event, args) => scanDocumentIpc(args));
 
   ipcMain.handle('fs:pickDirectory', () => pickDirectoryIpc());
   ipcMain.handle('fs:saveFile', (_event, args) => saveFileIpc(args));
