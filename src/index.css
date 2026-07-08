@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* ── Pointer cursor on real clickable elements ────────────────────────────
+   Tailwind v4's preflight reverted <button> to cursor:default. Restore the
+   hand cursor on anything actually clickable. */
+@layer base {
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]),
+  summary,
+  label[for],
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+}

@@ -1,0 +1,124 @@
+// ============================================================================
+// Data model — the real Arbeitskarte (from the two paper-card photos).
+// German field names to match the card. Tier-2 (owned here; will diverge).
+// ============================================================================
+
+export type JobStatus = 'offen' | 'in_arbeit' | 'erledigt' | 'archiviert';
+
+export interface JobCardRecord {
+  id: string; // uuid
+  jobNumber: string; // auto or manual — searchable
+  status: JobStatus;
+  createdAt: number;
+  updatedAt: number;
+
+  // Kopf
+  repDatum?: string; // Rep. Datum
+  abholdatum?: string; // Abholdatum
+  schluesselCode?: string; // Schlüssel-Code
+  ersatzwagenKopf?: string; // "Ersatzwagen :" line (header)
+  automat?: boolean; // "Automat: o" checkbox
+
+  // Kunde (left column) — Halter block also scanned from the Ausweis (S)
+  vorname?: string; // (S) Halter Vorname
+  name?: string; // (S) Halter Name — searchable
+  strasse?: string; // (S) Halter Strasse
+  plzOrt?: string; // (S) Halter PLZ / Ort
+  telefon?: string; // manual (not on the Ausweis)
+
+  // Fahrzeug (right column) — scanned fields marked (S)
+  fahrzeugmarke?: string; // (S) Marke
+  fahrzeugtyp?: string; // (S) Modell/Typ
+  kontrollschild?: string; // (S) Kennzeichen — searchable
+  vin?: string; // (S) Fahrgestellnummer — searchable
+  stammnummer?: string; // (S) CH Stammnummer
+  farbe?: string; // (S)
+  erstzulassung?: string; // (S)
+  kilometerstand?: string;
+  versicherung?: string; // (S) insurer name
+  schadenNr?: string;
+  ersatzteileJa?: boolean; // "Ersatzteile: ja o"
+  ersatzteileText?: string; // the line next to it
+  freieZeilen?: string[]; // the 2 blank lines beneath
+
+  // Schaden (car map)
+  damagedParts: string[]; // selected part ids (incl. frontStossstange / heckStossstange)
+  schadenNotiz?: string;
+
+  // Arbeiten / Material (back of card) — free text, NO calc
+  spenglerarbeit?: string;
+  ersatzteileKleinmat?: string; // "Ersatzteile/Kleinmat"
+  lackierarbeit?: string;
+  lackmaterial?: string;
+  kittsatz?: string;
+  nebenarbeiten?: string; // "(Hohlraum / Porto)"
+  schneidfaden?: string;
+  arbeitenErsatzwagen?: string; // "Ersatzwagen" line on the back
+
+  // Medien
+  ausweisImageId?: string; // FULL original Fahrzeugausweis photo (un-redacted) — FK into blobs
+  photoIds: string[]; // additional photos
+  notes?: string;
+}
+
+/** Ausweis + additional photos, keyed by jobcard, stable-sorted for display. */
+export interface BlobRecord {
+  id: string; // uuid (used as stable filename base on export)
+  jobcardId: string;
+  sortOrder: number;
+  kind: 'ausweis' | 'photo';
+  mime: string;
+  data: Blob;
+  sha256?: string;
+  createdAt: number;
+}
+
+export type ScanProviderId = 'infomaniak' | 'openai' | 'anthropic' | 'mistral';
+
+export interface WorkshopIdentity {
+  name: string;
+  strasse: string;
+  plzOrt: string;
+  telefon?: string;
+  email?: string;
+  website?: string;
+  /** data: URL of the header logo, printed on the card. */
+  logoDataUrl?: string;
+}
+
+export interface AppSettings {
+  workshop: WorkshopIdentity;
+
+  // Numbering (§5.6)
+  jobPrefix: string;
+  jobNextNumber: number;
+  autoJobNumbers: boolean;
+
+  // Scanner (§5.1a) — local only, never synced anywhere
+  docScanEnabled: boolean;
+  docScanProvider: ScanProviderId;
+  /** Infomaniak Produkt-ID (non-secret). The key lives in the credential store. */
+  docScanProviderAccountId?: string;
+  docScanComplianceAck: boolean;
+  /** Redact the owner block? Default false — Grab wants the Halter data. */
+  docScanRedactOwner: boolean;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  workshop: {
+    name: 'Carrosserie Spritzwerk Grab GmbH',
+    strasse: 'Grundstrasse 126',
+    plzOrt: '6430 Schwyz',
+    telefon: '',
+    email: 'info@carrosserie-grab.ch',
+    website: 'www.carrosserie-grab.ch',
+  },
+  jobPrefix: 'AK',
+  jobNextNumber: 1,
+  autoJobNumbers: true,
+  docScanEnabled: false,
+  docScanProvider: 'infomaniak',
+  docScanProviderAccountId: '',
+  docScanComplianceAck: false,
+  docScanRedactOwner: false,
+};
