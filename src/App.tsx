@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye } from 'lucide-react';
 import { useLocale } from './i18n/locale';
-import type { JobCardRecord, JobStatus, AppSettings } from './types/jobcard';
+import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
 import {
   loadJobCardsList,
@@ -17,7 +17,7 @@ import {
   deleteBlob,
   newId,
 } from './storage/jobCardRepository';
-import { renderHtmlToPdfBytes, previewPdfBytes, printJobCard } from './print/printPdfBlob';
+import { renderHtmlToPdfBytes, previewPdfBytes, printJobCard, previewJobCard } from './print/printPdfBlob';
 import { buildJobCardHtml } from './print/JobCardDocument';
 import { blobToDataUrl } from './utils/dataUrl';
 import { isElectron } from './platform/detect';
@@ -29,10 +29,11 @@ import type { ScanResult } from './scan/documentScanner';
 import { dataUrlToBlob } from './utils/dataUrl';
 import SettingsModal from './settings/SettingsModal';
 import CarMap from './carmap/CarMap';
-import { regionLabel } from './carmap/regions';
+import { regionLabel, GLASS_REGION_IDS } from './carmap/regions';
 import CameraCaptureModal from './capture/CameraCaptureModal';
 import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
+import DateField from './components/DateField';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string };
 
@@ -44,6 +45,19 @@ function formatDate(ts: number): string {
   } catch {
     return new Date(ts).toLocaleString();
   }
+}
+
+/** Load a card's photos and render its self-contained A4 print/preview HTML. */
+async function renderCardHtml(record: JobCardRecord, workshop: WorkshopIdentity): Promise<string> {
+  const bs = await getBlobs(record.id);
+  const photos = bs.filter((b) => b.kind === 'photo').sort((a, b) => a.sortOrder - b.sortOrder);
+  const photoDataUrls = await Promise.all(photos.map((p) => blobToDataUrl(p.data)));
+  return buildJobCardHtml({
+    record,
+    workshop,
+    photoDataUrls,
+    createdLabel: formatDate(record.createdAt),
+  });
 }
 
 /** True when the scanner is fully configured and safe to open. */
@@ -115,6 +129,33 @@ export default function App() {
     [reload, t.confirmDelete],
   );
 
+  const handleStatusChange = useCallback(async (id: string, status: JobStatus) => {
+    try {
+      const card = await getJobCard(id);
+      if (!card) return;
+      await saveJobCard({ ...card, status });
+      // Optimistic in-place update — keep the row where it is (no reload/jump).
+      // Bump updatedAt to match what saveJobCard persisted, so "Geändert" is truthful.
+      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, status, updatedAt: Date.now() } : c)));
+    } catch (err) {
+      console.warn('[status] change failed, resyncing:', err);
+      await reload(); // revert the UI to the persisted truth
+    }
+  }, [reload]);
+
+  const handlePreview = useCallback(async (id: string) => {
+    const card = await getJobCard(id);
+    if (!card) return;
+    try {
+      const s = await getSettings();
+      const html = await renderCardHtml(card, s.workshop);
+      const nr = card.jobNumber || card.id.slice(0, 6);
+      await previewJobCard(html, `Arbeitskarte-${nr}.pdf`);
+    } catch (err) {
+      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [t.printFailed]);
+
   const handleTestPrint = useCallback(async () => {
     if (!isElectron()) {
       window.alert(t.testPrintOnlyDesktop);
@@ -166,6 +207,8 @@ export default function App() {
             onQuery={setQuery}
             onOpen={(id) => setView({ kind: 'edit', id })}
             onDelete={handleDelete}
+            onPreview={handlePreview}
+            onStatusChange={handleStatusChange}
           />
         ) : (
           <EditView
@@ -199,9 +242,11 @@ function ListView(props: {
   onQuery: (q: string) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onPreview: (id: string) => void;
+  onStatusChange: (id: string, status: JobStatus) => void;
 }) {
   const { t } = useLocale();
-  const { cards, query, onQuery, onOpen, onDelete } = props;
+  const { cards, query, onQuery, onOpen, onDelete, onPreview, onStatusChange } = props;
 
   return (
     <div>
@@ -241,11 +286,19 @@ function ListView(props: {
                   <td className="px-4 py-2.5">{c.name || '—'}</td>
                   <td className="px-4 py-2.5">{c.kontrollschild || '—'}</td>
                   <td className="px-4 py-2.5">
-                    <StatusBadge status={c.status} />
+                    <StatusSelect status={c.status} onChange={(s) => onStatusChange(c.id, s)} />
                   </td>
                   <td className="px-4 py-2.5 text-slate-500">{formatDate(c.updatedAt)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => onPreview(c.id)}
+                        className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                        title={t.preview}
+                        aria-label={t.preview}
+                      >
+                        <Eye size={15} />
+                      </button>
                       <button
                         onClick={() => onOpen(c.id)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
@@ -272,18 +325,30 @@ function ListView(props: {
   );
 }
 
-function StatusBadge({ status }: { status: JobStatus }) {
+/** Inline status dropdown — lets the user reassign a card's status from the list. */
+function StatusSelect({ status, onChange }: { status: JobStatus; onChange: (s: JobStatus) => void }) {
   const { t } = useLocale();
   const styles: Record<JobStatus, string> = {
-    offen: 'bg-amber-100 text-amber-800',
-    in_arbeit: 'bg-blue-100 text-blue-800',
-    erledigt: 'bg-emerald-100 text-emerald-800',
-    archiviert: 'bg-slate-200 text-slate-600',
+    offen: 'bg-amber-100 text-amber-800 border-amber-200',
+    in_arbeit: 'bg-blue-100 text-blue-800 border-blue-200',
+    erledigt: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    archiviert: 'bg-slate-200 text-slate-600 border-slate-300',
   };
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
-      {t[`status_${status}`]}
-    </span>
+    <select
+      value={status}
+      onChange={(e) => onChange(e.target.value as JobStatus)}
+      onClick={(e) => e.stopPropagation()}
+      title={t.colStatus}
+      aria-label={t.colStatus}
+      className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-200 ${styles[status]}`}
+    >
+      {STATUS_ORDER.map((s) => (
+        <option key={s} value={s} className="bg-white text-slate-800">
+          {t[`status_${s}`]}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -443,15 +508,7 @@ function EditView({
     try {
       // Persist first so the printed card reflects the latest edits.
       await saveJobCard(record);
-      const bs = await getBlobs(record.id);
-      const photos = bs.filter((b) => b.kind === 'photo').sort((a, b) => a.sortOrder - b.sortOrder);
-      const photoDataUrls = await Promise.all(photos.map((p) => blobToDataUrl(p.data)));
-      const html = buildJobCardHtml({
-        record,
-        workshop: settings.workshop,
-        photoDataUrls,
-        createdLabel: formatDate(record.createdAt),
-      });
+      const html = await renderCardHtml(record, settings.workshop);
       const nr = record.jobNumber || record.id.slice(0, 6);
       await printJobCard(html, `Arbeitskarte-${nr}.pdf`);
     } catch (err) {
@@ -509,8 +566,8 @@ function EditView({
               ))}
             </select>
           </Field>
-          <TextField record={record} update={update} field="repDatum" label={t.repDatum} />
-          <TextField record={record} update={update} field="abholdatum" label={t.abholdatum} />
+          <DateField label={t.repDatum} value={record.repDatum ?? ''} onChange={(v) => update({ repDatum: v })} />
+          <DateField label={t.abholdatum} value={record.abholdatum ?? ''} onChange={(v) => update({ abholdatum: v })} />
           <TextField record={record} update={update} field="schluesselCode" label={t.schluesselCode} />
           <TextField record={record} update={update} field="ersatzwagenKopf" label={t.ersatzwagenKopf} />
           <TextField record={record} update={update} field="kilometerstand" label={t.kilometerstand} />
@@ -554,16 +611,22 @@ function EditView({
             {record.damagedParts.length === 0 ? (
               <span className="text-xs text-slate-400">{t.noDamageSelected}</span>
             ) : (
-              record.damagedParts.map((partId) => (
-                <button
-                  key={partId}
-                  onClick={() => toggleDamage(partId)}
-                  className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-200"
-                  title={t.delete}
-                >
-                  {regionLabel(partId)} ✕
-                </button>
-              ))
+              record.damagedParts.map((partId) => {
+                const glass = GLASS_REGION_IDS.has(partId);
+                const chipCls = glass
+                  ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                  : 'bg-red-100 text-red-700 hover:bg-red-200';
+                return (
+                  <button
+                    key={partId}
+                    onClick={() => toggleDamage(partId)}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${chipCls}`}
+                    title={t.delete}
+                  >
+                    {regionLabel(partId)} ✕
+                  </button>
+                );
+              })
             )}
           </div>
           <div className="mt-4">
@@ -681,7 +744,6 @@ function EditView({
         apiKey={getDocScanKey()}
         accountId={settings.docScanProviderAccountId}
         country="CH"
-        redactOwner={settings.docScanRedactOwner}
         onApply={(fields, original) => void handleScanApply(fields, original)}
         onClose={() => setScanOpen(false)}
       />

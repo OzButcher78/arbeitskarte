@@ -48,18 +48,41 @@ export async function previewPdfBytes(bytes: Uint8Array, title?: string): Promis
  *   • Android / browser: open the page and invoke the system print dialog
  *     (the OS offers "Drucken" and "Als PDF speichern"). No PDF engine bundled.
  */
+/** Open self-contained HTML in a new tab (non-Electron fallback). Throws with a
+ *  localized message if the browser/WebView blocks the pop-up. */
+function openHtmlWindow(html: string, blockedMsg: string): Window {
+  const win = window.open('', '_blank');
+  if (!win) throw new Error(blockedMsg);
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  return win;
+}
+
 export async function printJobCard(html: string, filename: string): Promise<void> {
   if (isElectron() && window.electronAPI) {
     const bytes = await renderHtmlToPdfBytes(html, filename);
     await previewPdfBytes(bytes, filename);
     return;
   }
-  const win = window.open('', '_blank');
-  if (!win) throw new Error('Das Druckfenster wurde blockiert. Bitte Pop-ups erlauben.');
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
+  const win = openHtmlWindow(html, 'Das Druckfenster wurde blockiert. Bitte Pop-ups erlauben.');
   // Let images/SVG lay out before invoking the print dialog.
   setTimeout(() => { try { win.print(); } catch { /* user can print manually */ } }, 500);
+}
+
+/**
+ * Preview a self-contained job-card HTML page WITHOUT forcing the print dialog.
+ *   • Electron: render → PDF bytes → native preview window (with its own
+ *     Drucken / Als PDF speichern buttons).
+ *   • Android / browser: open the page in a new tab so the user can read it.
+ * Same rendering path as printJobCard, minus the automatic system print.
+ */
+export async function previewJobCard(html: string, filename: string): Promise<void> {
+  if (isElectron() && window.electronAPI) {
+    const bytes = await renderHtmlToPdfBytes(html, filename);
+    await previewPdfBytes(bytes, filename);
+    return;
+  }
+  openHtmlWindow(html, 'Das Vorschaufenster wurde blockiert. Bitte Pop-ups erlauben.');
 }

@@ -17,7 +17,9 @@ export function carMapSvgString(selected: Set<string>): string {
   for (const p of DECOR) parts.push(`<path d="${p.d}" fill="${p.fill}"/>`);
   for (const r of REGIONS) {
     if (!selected.has(r.id)) continue;
-    const attrs = 'fill="#ef4444" fill-opacity="0.5" stroke="#dc2626" stroke-width="3"';
+    const fill = r.selectedFill ?? '#ef4444';
+    const stroke = r.selectedStroke ?? '#dc2626';
+    const attrs = `fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="3"`;
     const sh = r.shape;
     if (sh.kind === 'path') {
       parts.push(`<path d="${sh.d}" ${attrs}/>`);
