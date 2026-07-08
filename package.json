@@ -1,0 +1,57 @@
+{
+  "name": "arbeitskarte",
+  "productName": "Arbeitskarte",
+  "description": "Arbeitskarte — digitale Auftragskarte fürs Carrosserie-/Spritzwerk (CH)",
+  "author": {
+    "name": "Carrosserie Spritzwerk Grab GmbH"
+  },
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "dev:desktop": "cross-env BUILD_TARGET=electron vite",
+    "build": "cross-env BUILD_TARGET=electron vite build",
+    "build:web": "vite build",
+    "preview": "vite preview",
+    "build:desktop": "cross-env BUILD_TARGET=electron vite build && electron-builder --win --config electron-builder.config.cjs --publish never",
+    "build:android": "cross-env BUILD_TARGET=capacitor vite build && cap sync android",
+    "cap:sync": "cross-env BUILD_TARGET=capacitor vite build && cap sync android",
+    "cap:open:android": "cap open android",
+    "cap:run:android": "cross-env BUILD_TARGET=capacitor vite build && cap sync android && cap run android",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "typecheck:electron": "tsc --noEmit -p electron/tsconfig.json",
+    "typecheck:all": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p electron/tsconfig.json"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/keyboard": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1",
+    "dexie": "^4.2.1",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.1",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.23",
+    "cross-env": "^10.1.0",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
+    "electron-window-state": "^5.0.3",
+    "esbuild": "^0.28.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  }
+}

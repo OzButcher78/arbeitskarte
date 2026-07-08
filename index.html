@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbeitskarte</title>
+    <style>
+      /* Boot splash — paints instantly before React mounts, removed by
+         main.tsx after the first commit. Inline styles so it renders before
+         any CSS bundle is fetched. */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 35%, #f1f5f9 65%, #e0f2fe 100%);
+        transition: opacity 320ms ease-out;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      #boot-splash.boot-splash-fading {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot-splash .boot-splash-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 28px;
+      }
+      #boot-splash .boot-splash-word {
+        font-size: clamp(28px, 6vw, 44px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #0f172a;
+        user-select: none;
+      }
+      #boot-splash .boot-splash-progress {
+        position: relative;
+        width: min(50vw, 260px);
+        height: 2px;
+        background: rgba(15, 23, 42, 0.06);
+        border-radius: 1px;
+        overflow: hidden;
+      }
+      #boot-splash .boot-splash-progress::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: linear-gradient(90deg,
+          rgba(37, 99, 235, 0)   0%,
+          rgba(37, 99, 235, 0.7) 50%,
+          rgba(37, 99, 235, 0)   100%);
+        animation: boot-splash-sweep 1.6s linear infinite;
+      }
+      @keyframes boot-splash-sweep {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .boot-splash-progress::after {
+          animation: none;
+          background: rgba(37, 99, 235, 0.5);
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="boot-splash-stack">
+        <div class="boot-splash-word">Arbeitskarte</div>
+        <div class="boot-splash-progress"></div>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
