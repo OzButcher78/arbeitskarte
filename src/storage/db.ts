@@ -5,6 +5,7 @@
 
 import Dexie, { type Table } from 'dexie';
 import type { JobCardRecord, BlobRecord } from '../types/jobcard';
+import { LEGACY_PANEL_MIGRATION } from '../carmap/panels';
 
 export interface AppMetaRow {
   key: string;
@@ -23,6 +24,35 @@ export class ArbeitskarteDB extends Dexie {
       blobs: 'id, jobcardId, sortOrder',
       appmeta: 'key',
     });
+    // v2: FlatCarMap2 blueprint. Remap old region ids → new data-panel keys
+    // (unknown/legacy-only ids like schwellerL/R kept verbatim) and backfill
+    // the new damageStrokes field. Same three stores; atomic upgrade tx.
+    this.version(2)
+      .stores({
+        jobcards: 'id, jobNumber, kontrollschild, vin, name, status, createdAt, updatedAt',
+        blobs: 'id, jobcardId, sortOrder',
+        appmeta: 'key',
+      })
+      .upgrade((tx) =>
+        tx
+          .table('jobcards')
+          .toCollection()
+          .modify((jc: JobCardRecord) => {
+            if (Array.isArray(jc.damagedParts)) {
+              const seen = new Set<string>();
+              const remapped: string[] = [];
+              for (const id of jc.damagedParts) {
+                const key = LEGACY_PANEL_MIGRATION[id] ?? id;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  remapped.push(key);
+                }
+              }
+              jc.damagedParts = remapped;
+            }
+            if (!Array.isArray(jc.damageStrokes)) jc.damageStrokes = [];
+          }),
+      );
   }
 }
 

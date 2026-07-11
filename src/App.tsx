@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2 } from 'lucide-react';
 import { useLocale } from './i18n/locale';
-import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity } from './types/jobcard';
+import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity, DamageStroke } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
 import {
   loadJobCardsList,
@@ -17,10 +17,9 @@ import {
   deleteBlob,
   newId,
 } from './storage/jobCardRepository';
-import { renderHtmlToPdfBytes, previewPdfBytes, printJobCard, previewJobCard } from './print/printPdfBlob';
+import { printJobCard, previewJobCard } from './print/printPdfBlob';
 import { buildJobCardHtml } from './print/JobCardDocument';
 import { blobToDataUrl } from './utils/dataUrl';
-import { isElectron } from './platform/detect';
 import { SCAN_PROVIDER_META } from './scan/scanProviders';
 import { getDocScanKey } from './platform/credentialStore';
 import DocumentScanModal from './scan/DocumentScanModal';
@@ -29,7 +28,7 @@ import type { ScanResult } from './scan/documentScanner';
 import { dataUrlToBlob } from './utils/dataUrl';
 import SettingsModal from './settings/SettingsModal';
 import CarMap from './carmap/CarMap';
-import { regionLabel, GLASS_REGION_IDS } from './carmap/regions';
+import { panelLabel, panelCategory, type PanelCategory } from './carmap/panels';
 import CameraCaptureModal from './capture/CameraCaptureModal';
 import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
@@ -38,6 +37,17 @@ import DateField from './components/DateField';
 type View = { kind: 'list' } | { kind: 'edit'; id: string };
 
 const STATUS_ORDER: JobStatus[] = ['offen', 'in_arbeit', 'erledigt', 'archiviert'];
+
+// Chip colour per panel category — mirrors the FlatCarMap2 selected-fill scheme
+// (body/wheels/bumpers/other + rear lights red, glass + indicators orange,
+// front lights yellow) so chips read the same as the map.
+const CHIP_CLASSES: Record<PanelCategory, string> = {
+  body: 'bg-red-100 text-red-700 hover:bg-red-200',
+  'light-rear': 'bg-red-100 text-red-700 hover:bg-red-200',
+  glass: 'bg-orange-100 text-orange-700 hover:bg-orange-200',
+  'light-indicator': 'bg-orange-100 text-orange-700 hover:bg-orange-200',
+  'light-front': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
+};
 
 function formatDate(ts: number): string {
   try {
@@ -52,10 +62,13 @@ async function renderCardHtml(record: JobCardRecord, workshop: WorkshopIdentity)
   const bs = await getBlobs(record.id);
   const photos = bs.filter((b) => b.kind === 'photo').sort((a, b) => a.sortOrder - b.sortOrder);
   const photoDataUrls = await Promise.all(photos.map((p) => blobToDataUrl(p.data)));
+  const ausweis = bs.find((b) => b.kind === 'ausweis');
+  const ausweisDataUrl = ausweis ? await blobToDataUrl(ausweis.data) : undefined;
   return buildJobCardHtml({
     record,
     workshop,
     photoDataUrls,
+    ausweisDataUrl,
     createdLabel: formatDate(record.createdAt),
   });
 }
@@ -113,6 +126,7 @@ export default function App() {
       createdAt: now,
       updatedAt: now,
       damagedParts: [],
+      damageStrokes: [],
       photoIds: [],
     };
     await saveJobCard(record);
@@ -156,19 +170,6 @@ export default function App() {
     }
   }, [t.printFailed]);
 
-  const handleTestPrint = useCallback(async () => {
-    if (!isElectron()) {
-      window.alert(t.testPrintOnlyDesktop);
-      return;
-    }
-    try {
-      const bytes = await renderHtmlToPdfBytes(buildTestHtml(), 'Arbeitskarte-Test.pdf');
-      await previewPdfBytes(bytes, 'Arbeitskarte-Test.pdf');
-    } catch (err) {
-      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [t.printFailed, t.testPrintOnlyDesktop]);
-
   return (
     <div className="min-h-full bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
@@ -178,23 +179,17 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={handleNew}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            <FilePlus2 size={16} /> {t.newCard}
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
             title={t.settings}
           >
             <Settings size={16} /> {t.settings}
-          </button>
-          <button
-            onClick={handleTestPrint}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Printer size={16} /> {t.testPrint}
-          </button>
-          <button
-            onClick={handleNew}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            <FilePlus2 size={16} /> {t.newCard}
           </button>
         </div>
       </header>
@@ -369,6 +364,7 @@ function EditView({
   const [photoCamOpen, setPhotoCamOpen] = useState(false);
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
   const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
+  const [mapMode, setMapMode] = useState<'select' | 'draw'>('select');
   const photoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -524,8 +520,19 @@ function EditView({
     update({ damagedParts: Array.from(next) });
   };
 
+  // Freehand strokes — functional updates are immune to stale record captures
+  // (native listeners in CarMap may fire against an older closure).
+  const strokes = record.damageStrokes ?? [];
+  const addStroke = (stroke: DamageStroke) =>
+    setRecord((r) => (r ? { ...r, damageStrokes: [...(r.damageStrokes ?? []), stroke] } : r));
+  const undoStroke = () =>
+    setRecord((r) => (r ? { ...r, damageStrokes: (r.damageStrokes ?? []).slice(0, -1) } : r));
+  const clearStrokes = () => {
+    if (window.confirm(t.carmapClearConfirm)) update({ damageStrokes: [] });
+  };
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-6xl">
       <div className="mb-4 flex items-center justify-between">
         <button
           onClick={onDone}
@@ -535,21 +542,24 @@ function EditView({
         </button>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void handlePrint()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Printer size={16} /> {t.printCard}
-          </button>
-          <button
             onClick={handleScanClick}
             className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             <ScanLine size={16} /> {t.scanAusweis}
           </button>
+          <button
+            onClick={() => void handlePrint()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Printer size={16} /> {t.printCard}
+          </button>
         </div>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-4">
+        {/* Top data — two columns to cut scrolling */}
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
         {/* Kopf */}
         <Section title={t.sectionKopf}>
           <TextField record={record} update={update} field="jobNumber" label={t.jobNumber} />
@@ -557,7 +567,7 @@ function EditView({
             <select
               value={record.status}
               onChange={(e) => update({ status: e.target.value as JobStatus })}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
             >
               {STATUS_ORDER.map((s) => (
                 <option key={s} value={s}>
@@ -582,7 +592,9 @@ function EditView({
           <TextField record={record} update={update} field="plzOrt" label={t.plzOrt} />
           <TextField record={record} update={update} field="telefon" label={t.telefon} />
         </Section>
+          </div>
 
+          <div className="space-y-4">
         {/* Fahrzeug */}
         <Section title={t.sectionVehicle}>
           <TextField record={record} update={update} field="fahrzeugmarke" label={t.fahrzeugmarke} />
@@ -597,25 +609,78 @@ function EditView({
           <CheckField record={record} update={update} field="ersatzteileJa" label={t.ersatzteileJa} />
           <TextField record={record} update={update} field="ersatzteileText" label={t.ersatzteileText} />
         </Section>
+          </div>
+        </div>
 
         {/* Schaden — car map */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="mb-3 flex items-center justify-between">
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-2.5 flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionSchaden}</h2>
-            <span className="text-xs text-slate-400">{t.schadenHint}</span>
+            <span className="text-xs text-slate-400">{mapMode === 'draw' ? t.carmapHintDraw : t.schadenHint}</span>
           </div>
-          <div className="mx-auto max-w-xs">
-            <CarMap selected={selectedParts} onToggle={toggleDamage} />
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <div>
+          <div className="mx-auto w-full max-w-xl">
+            <CarMap
+              selected={selectedParts}
+              strokes={strokes}
+              mode={mapMode}
+              onToggle={toggleDamage}
+              onStrokeAdd={addStroke}
+            />
           </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
+              <button
+                type="button"
+                onClick={() => setMapMode('select')}
+                aria-pressed={mapMode === 'select'}
+                className={`px-2.5 py-1.5 text-xs font-medium ${
+                  mapMode === 'select' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {t.carmapModeSelect}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapMode('draw')}
+                aria-pressed={mapMode === 'draw'}
+                className={`px-2.5 py-1.5 text-xs font-medium ${
+                  mapMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {t.carmapModeDraw}
+              </button>
+            </div>
+            {mapMode === 'draw' && (
+              <>
+                <button
+                  type="button"
+                  onClick={undoStroke}
+                  disabled={strokes.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <Undo2 size={14} /> {t.carmapUndo}
+                </button>
+                <button
+                  type="button"
+                  onClick={clearStrokes}
+                  disabled={strokes.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <Trash2 size={14} /> {t.carmapClear}
+                </button>
+              </>
+            )}
+          </div>
+            </div>
+            <div>
+          <div className="flex flex-wrap gap-1.5">
             {record.damagedParts.length === 0 ? (
               <span className="text-xs text-slate-400">{t.noDamageSelected}</span>
             ) : (
               record.damagedParts.map((partId) => {
-                const glass = GLASS_REGION_IDS.has(partId);
-                const chipCls = glass
-                  ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                  : 'bg-red-100 text-red-700 hover:bg-red-200';
+                const chipCls = CHIP_CLASSES[panelCategory(partId)];
                 return (
                   <button
                     key={partId}
@@ -623,28 +688,30 @@ function EditView({
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${chipCls}`}
                     title={t.delete}
                   >
-                    {regionLabel(partId)} ✕
+                    {panelLabel(partId)} ✕
                   </button>
                 );
               })
             )}
           </div>
-          <div className="mt-4">
+          <div className="mt-3">
             <Field label={t.schadenNotiz}>
               <textarea
                 value={record.schadenNotiz ?? ''}
                 onChange={(e) => update({ schadenNotiz: e.target.value })}
-                rows={2}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                rows={4}
+                className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
               />
             </Field>
+          </div>
+            </div>
           </div>
         </div>
 
         {/* Arbeiten / Material (back of card) */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionArbeiten}</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionArbeiten}</h2>
+          <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
             <TextAreaField record={record} update={update} field="spenglerarbeit" label={t.spenglerarbeit} />
             <TextAreaField record={record} update={update} field="ersatzteileKleinmat" label={t.ersatzteileKleinmat} />
             <TextAreaField record={record} update={update} field="lackierarbeit" label={t.lackierarbeit} />
@@ -653,15 +720,16 @@ function EditView({
             <TextAreaField record={record} update={update} field="nebenarbeiten" label={t.nebenarbeiten} />
             <TextAreaField record={record} update={update} field="schneidfaden" label={t.schneidfaden} />
             <TextAreaField record={record} update={update} field="arbeitenErsatzwagen" label={t.arbeitenErsatzwagen} />
-            <div className="sm:col-span-2">
-              <TextAreaField record={record} update={update} field="notes" label={t.notes} rows={3} />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <TextAreaField record={record} update={update} field="notes" label={t.notes} rows={2} />
             </div>
           </div>
         </div>
 
-        {/* Fotos */}
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="mb-3 flex items-center justify-between">
+        {/* Fotos + Ausweis — side by side */}
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className={`rounded-lg border border-slate-200 bg-white p-4 ${ausweisUrl ? '' : 'lg:col-span-2'}`}>
+          <div className="mb-2.5 flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionFotos}</h2>
             <div className="flex items-center gap-2">
               <button
@@ -681,7 +749,7 @@ function EditView({
               <input
                 ref={photoFileRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp"
                 multiple
                 className="hidden"
                 onChange={(e) => { void addPhotos(Array.from(e.target.files ?? [])); e.target.value = ''; }}
@@ -716,11 +784,12 @@ function EditView({
               <img
                 src={ausweisUrl}
                 alt={t.ausweisFoto}
-                className="max-h-64 rounded-lg border border-slate-200 object-contain"
+                className="max-h-56 w-full rounded-lg border border-slate-200 object-contain"
               />
             </div>
           </Section>
         )}
+        </div>
       </div>
 
       <div className="mt-6 flex justify-end gap-2">
@@ -759,11 +828,11 @@ function EditView({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
+    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${className ?? ''}`}>
+      <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">{children}</div>
     </div>
   );
 }
@@ -771,7 +840,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
       {children}
     </label>
   );
@@ -799,7 +868,7 @@ function TextField({
         onChange={(e) =>
           update({ [field]: upper ? e.target.value.toUpperCase() : e.target.value } as Partial<JobCardRecord>)
         }
-        className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 ${upper ? 'uppercase' : ''}`}
+        className={`w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 ${upper ? 'uppercase' : ''}`}
       />
     </Field>
   );
@@ -826,7 +895,7 @@ function TextAreaField({
         value={value}
         rows={rows}
         onChange={(e) => update({ [field]: e.target.value } as Partial<JobCardRecord>)}
-        className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+        className="w-full resize-y rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
       />
     </Field>
   );
@@ -856,24 +925,4 @@ function CheckField({
       <span className="text-sm text-slate-700">{label}</span>
     </label>
   );
-}
-
-function buildTestHtml(): string {
-  const now = new Intl.DateTimeFormat('de-CH', { dateStyle: 'full', timeStyle: 'short' }).format(Date.now());
-  return `<!doctype html>
-<html lang="de"><head><meta charset="utf-8">
-<style>
-  @page { size: A4; margin: 20mm; }
-  body { font-family: system-ui, "Segoe UI", sans-serif; color: #0f172a; }
-  h1 { font-size: 24px; margin: 0 0 8px; }
-  .sub { color: #64748b; margin-bottom: 24px; }
-  .box { border: 2px solid #2563eb; border-radius: 8px; padding: 24px; }
-</style></head>
-<body>
-  <div class="box">
-    <h1>Arbeitskarte — Test-Druck</h1>
-    <div class="sub">printToPDF-Rundlauf funktioniert.</div>
-    <p>Erzeugt: ${now}</p>
-  </div>
-</body></html>`;
 }

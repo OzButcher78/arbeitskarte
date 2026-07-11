@@ -47,8 +47,15 @@ the device.
 5. **Backwards compatibility.** `getSettings()` shallow-merges over `DEFAULT_SETTINGS`; new
    `AppSettings` fields must have a default there so old stores keep working.
 6. **Typecheck stays at zero** — see [errors.md](errors.md).
-7. **Data model is owned here** (Tier-2, German field names): `src/types/jobcard.ts`. The car-map
-   part ids are free-form (no fixed-panel rule); custom regions are fine.
+7. **Data model is owned here** (Tier-2, German field names): `src/types/jobcard.ts`. Car-map part
+   ids are the canonical `data-panel` keys of `FlatCarMap2.svg` (49 panels); legacy region ids are
+   remapped by the Dexie **v2** upgrade and any unknown id is tolerated (label fallback, renders as
+   a chip but doesn't highlight). `damageStrokes` holds freehand strokes in the SVG's viewBox space.
+   `FlatCarMap2.svg` is inlined via `?raw` and owns ALL geometry and visual states. **Never
+   reformat/optimize it or rename its paths / `data-panel` keys** (geometry is frozen). Damage
+   colours are NOT computed in the app — tune the hover/selected fills, `fill-opacity`, and the
+   `#DrawLayer` stroke in its embedded `<style>` (one edit flows to both the live map and the print
+   bake-in). The app only toggles a `.selected` class and writes stroke `d` paths into `#DrawLayer`.
 
 ---
 
@@ -80,7 +87,7 @@ Android needs a one-time `npx cap add android` (Android SDK) before `cap` script
 | Scanner | `src/scan/{scanProviders,documentScanner,scanRedaction,vinDecode,applyScan,DocumentScanModal,PhotoCompanionPanel}.tsx?`, `electron/ipc/scan.ts` |
 | LAN photo companion (Phase 5, Electron) | `electron/companion/server.ts`, `electron/ipc/companion.ts`, `src/platform/companion.ts`, `src/scan/PhotoCompanionPanel.tsx` |
 | Capture | `src/capture/{CameraCaptureModal.tsx,useDeviceCameras,compressImage,photoLimits}.ts` |
-| Car map | `src/carmap/{regions,CarMap,svgString}.ts?` (incl. clickable windscreens) |
+| Car map | `src/carmap/{panels,strokes,CarMap,svgString}.ts? + FlatCarMap2.svg` (49-panel multi-view blueprint + freehand draw) |
 | Print | `src/print/{JobCardDocument,printPdfBlob}.ts`, `electron/ipc/{print,printPdf}.ts` |
 | Settings | `src/settings/SettingsModal.tsx` |
 | Electron shell | `electron/{main,preload}.ts`, `electron/ipc/{fs,credentials,types}.ts` |

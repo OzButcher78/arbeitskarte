@@ -135,7 +135,7 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
                   <input
                     ref={logoInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp"
                     className="hidden"
                     onChange={(e) => { void handleLogo(e.target.files?.[0]); e.target.value = ''; }}
                   />

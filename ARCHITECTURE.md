@@ -84,12 +84,28 @@ Lets a phone on the same LAN shoot a photo straight into the scanner — no cabl
 
 ## Car map
 
-- **`carmap/regions.ts`** — data: `DECOR` (outline paths) + `REGIONS` (16 body zones lifted +
-  `frontStossstange`/`heckStossstange`). Each region is `{id,label,shape}` where shape is
-  path/polygon/rect.
-- **`carmap/CarMap.tsx`** — generic renderer; `selected: Set<string>` + `onToggle`.
-- **`carmap/svgString.ts`** — `carMapSvgString(selected)` for the print HTML (outline + selected
-  regions in red).
+The commissioned **`carmap/FlatCarMap2.svg`** (multi-view blueprint, viewBox `185 460 2095 1575`)
+is the single source of truth for geometry AND appearance. It self-contains 49 clickable panels
+keyed by `data-panel`, an embedded `<style>` that owns every visual state (hover + `.selected`
+fills per category: body/rear-light red, glass/indicator orange, front-light yellow), and a
+trailing `<g id="DrawLayer">` for freehand strokes. **Never edit / reformat / optimize this file.**
+
+- **`carmap/panels.ts`** — pure data: `PANEL_DEFS` (49 `{key,label,category}`) → `PANEL_LABELS` /
+  `PANEL_CATEGORIES`; `panelLabel`/`panelCategory` (fallbacks: new → legacy → raw id / `'body'`);
+  `LEGACY_PANEL_MIGRATION` (16 old ids → new keys) + `LEGACY_LABELS` (all 20 old ids).
+- **`carmap/strokes.ts`** — `MIN_POINT_DIST` + `strokeToPathD` (a single point → `M p L p`, a dot).
+- **`carmap/CarMap.tsx`** — inlines the SVG via `?raw` + a **module-level** `{__html}` (stable
+  identity → React sets innerHTML once, never clobbering imperative edits). Props
+  `{selected, strokes, mode, onToggle, onStrokeAdd}`. Native listeners attach **once** and read a
+  `latest` ref: `click` delegates via `closest('[data-panel]')`; Pointer Events (`setPointerCapture`,
+  viewBox coords via `createSVGPoint`+`getScreenCTM().inverse()`) drive freehand draw. Idempotent
+  effects toggle `.selected` (querySelectorAll over `[data-panel="KEY"]`, so multi-view panels
+  light up together), the `draw-mode` class, and repopulate `#DrawLayer`. Draw mode (`'select'`
+  vs `'draw'`) is ephemeral UI state, not persisted.
+- **`carmap/svgString.ts`** — `carMapSvgString(selected, strokes)` for print: `DOMParser` bakes the
+  `.selected` classes + stroke paths into a clone, `XMLSerializer` emits it (renderer-only).
+- **Persistence**: `damagedParts` (data-panel keys) + `damageStrokes: DamageStroke[]` on the record;
+  the Dexie **v2** upgrade remaps legacy ids and backfills `damageStrokes: []`.
 
 ## Print
 
