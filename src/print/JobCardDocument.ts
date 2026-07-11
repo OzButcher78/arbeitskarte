@@ -7,9 +7,10 @@
 // Layout mirrors the shop's original paper Auftragskarte, kept to one physical
 // sheet (double-sided):
 //   • Page 1: slim letterhead, title + Ersatzwagen (L) / dates + Schlüssel-Code
-//     (R), status, Kunde / Fahrzeug, then Arbeiten/Material (L) beside the
-//     damage map (R).
-//   • Page 2 (back): the scanned Fahrzeugausweis + any job photos.
+//     (R), status, Kunde / Fahrzeug (top half), then a large centred damage map
+//     filling the bottom half.
+//   • Page 2 (back): Arbeiten/Material (top half), then the scanned
+//     Fahrzeugausweis + any job photos (bottom half).
 // ============================================================================
 
 import type { JobCardRecord, WorkshopIdentity } from '../types/jobcard';
@@ -113,15 +114,17 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     workRow('Bemerkungen', r.notes),
   ].join('');
 
-  // Page 2 (back of sheet): the Fahrzeugausweis + any job photos. Only emitted
-  // when there's something to show, so a card without media stays a single page.
-  const photos = photoDataUrls.length
+  // Bottom half of page 2: the Fahrzeugausweis + any job photos. When both are
+  // present the ausweis is shrunk (`with-photos`) so the media still fits the
+  // lower half beside the photo grid.
+  const hasPhotos = photoDataUrls.length > 0;
+  const photos = hasPhotos
     ? `<h3 class="sec">Fotos</h3><div class="photos">${photoDataUrls.map((u) => `<img src="${u}" alt="">`).join('')}</div>`
     : '';
   const ausweis = ausweisDataUrl
-    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
+    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis${hasPhotos ? ' with-photos' : ''}" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
     : '';
-  const page2 = ausweis || photos ? `<div class="page2">${ausweis}${photos}</div>` : '';
+  const media = ausweis || photos ? `<div class="media-half">${ausweis}${photos}</div>` : '';
 
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><title>Arbeitskarte ${esc(r.jobNumber)}</title>
@@ -149,24 +152,29 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .cell .lbl { color: #64748b; min-width: 92px; flex-shrink: 0; }
   .cell .val { font-weight: 500; }
   /* The sheet is folded across its centre — keep the top block filling the
-     upper half so Arbeiten + Schaden begin just below the fold line.
+     upper half so the damage map begins just below the fold line.
      Fold = A4 centre 148.5mm − 14mm @page margin = 134.5mm of content. */
   .top-half { min-height: 135mm; }
-  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
-  .carmap-wrap svg { width: 100%; height: auto; display: block; }
-  .parts { font-size: 11px; margin-top: 6px; }
+  /* Page-1 bottom half: one big damage map, centred. */
+  .schaden-full { margin-top: 4mm; }
+  .carmap-big { text-align: center; margin: 3mm 0; }
+  .carmap-big svg { width: 140mm; max-width: 100%; height: auto; display: inline-block; }
+  .parts { font-size: 11px; margin-top: 4px; text-align: center; }
   .parts .heading { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
   .parts .list { font-weight: 600; }
   .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
   table.arb { width: 100%; border-collapse: collapse; }
-  table.arb th { text-align: left; vertical-align: top; color: #64748b; font-weight: 600; width: 130px; padding: 9px 8px 9px 0; border-bottom: 1px solid #cbd5e1; }
+  table.arb th { text-align: left; vertical-align: top; color: #64748b; font-weight: 600; width: 150px; padding: 9px 8px 9px 0; border-bottom: 1px solid #cbd5e1; }
   table.arb td { vertical-align: top; padding: 9px 0; border-bottom: 1px solid #cbd5e1; }
   table.arb td .wl { display: block; height: 34px; }
   h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
   .page2 { break-before: page; page-break-before: always; }
-  .ausweis { max-width: 100%; max-height: 170mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; }
+  /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the fold. */
+  .arb-half { min-height: 135mm; }
+  .ausweis { max-width: 100%; max-height: 116mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; }
+  .ausweis.with-photos { max-height: 78mm; }
   .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .photos img { width: 100%; height: 90px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .photos img { width: 100%; height: 82px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 4px; }
 </style></head>
 <body>
   <div class="top-half">
@@ -197,22 +205,22 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   </div>
   </div>
 
-  <div class="bottom">
-    <div>
-      <h3 class="sec">Arbeiten / Material</h3>
-      <table class="arb">${arbeiten}</table>
-    </div>
-    <div>
-      <h3 class="sec">Schaden</h3>
-      <div class="carmap-wrap">${carMap}</div>
-      <div class="parts">
-        <div class="heading">Beschädigte Teile</div>
-        <div class="list">${damaged ? esc(damaged) : '—'}</div>
-        ${r.schadenNotiz ? `<div class="notiz">${esc(r.schadenNotiz)}</div>` : ''}
-      </div>
+  <div class="schaden-full">
+    <h3 class="sec">Schaden</h3>
+    <div class="carmap-big">${carMap}</div>
+    <div class="parts">
+      <div class="heading">Beschädigte Teile</div>
+      <div class="list">${damaged ? esc(damaged) : '—'}</div>
+      ${r.schadenNotiz ? `<div class="notiz">${esc(r.schadenNotiz)}</div>` : ''}
     </div>
   </div>
 
-  ${page2}
+  <div class="page2">
+    <div class="arb-half">
+      <h3 class="sec">Arbeiten / Material</h3>
+      <table class="arb">${arbeiten}</table>
+    </div>
+    ${media}
+  </div>
 </body></html>`;
 }
