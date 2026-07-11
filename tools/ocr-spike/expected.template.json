@@ -1,0 +1,15 @@
+{
+  "marke": "VW",
+  "modell": "Golf",
+  "kennzeichen": "SZ 35663",
+  "fahrgestellnummer": "WVWZZZ1KZAW000000",
+  "stammnummer": "123.456.789",
+  "farbe": "Schwarz",
+  "erstzulassung": "12.03.2019",
+  "versicherung": "AXA",
+  "halterVorname": "Hans",
+  "halterName": "Muster",
+  "halterStrasse": "Musterstrasse 12",
+  "halterPlz": "8840",
+  "halterOrt": "Einsiedeln"
+}

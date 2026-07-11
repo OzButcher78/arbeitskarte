@@ -28,6 +28,12 @@
 
 export type ScanProvider = 'openai' | 'anthropic' | 'infomaniak' | 'mistral';
 
+/** Provider the SCANNER UI may pick. `'local'` is the on-device Tesseract OCR
+ *  path — it is deliberately NOT part of `ScanProvider` (the exhaustively-typed
+ *  HTTP transport: SCAN_PROVIDER_META / SCAN_MODELS / buildScanRequest never see
+ *  it). Only the client orchestrator + UI branch on this wider type. */
+export type ScanProviderChoice = ScanProvider | 'local';
+
 /** What the scan reads. 'fahrzeugausweis' = registration document; 'vin' = a
  *  VIN plate on a car part (2-field read + offline decode). */
 export type ScanKind = 'fahrzeugausweis' | 'vin';
