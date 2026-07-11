@@ -1,39 +1,39 @@
 // ============================================================================
-// carMapSvgString — the car map as a self-contained SVG string, for embedding
-// in print HTML. Draws the outline (DECOR) + only the SELECTED regions in red.
+// carMapSvgString — the FlatCarMap2 blueprint as a self-contained SVG string
+// for embedding in the print HTML. Parses the raw SVG, bakes the `.selected`
+// class onto the damaged panels and appends the freehand strokes into
+// #DrawLayer, then serialises. The SVG's own embedded <style> carries all the
+// fills, so no colour logic is needed here. Renderer-only (print HTML is built
+// in App.tsx), so DOMParser/XMLSerializer are always available.
 // ============================================================================
 
-import { DECOR, REGIONS } from './regions';
+import rawSvg from './FlatCarMap2.svg?raw';
+import type { DamageStroke } from '../types/jobcard';
+import { strokeToPathD } from './strokes';
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) =>
-    c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : c === "'" ? '&apos;' : '&quot;',
-  );
-}
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export function carMapSvgString(selected: Set<string>): string {
-  const parts: string[] = [];
-  parts.push('<svg viewBox="238 -199.2 1072.3 1238.1" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">');
-  for (const p of DECOR) parts.push(`<path d="${p.d}" fill="${p.fill}"/>`);
-  for (const r of REGIONS) {
-    if (!selected.has(r.id)) continue;
-    const fill = r.selectedFill ?? '#ef4444';
-    const stroke = r.selectedStroke ?? '#dc2626';
-    const attrs = `fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="3"`;
-    const sh = r.shape;
-    if (sh.kind === 'path') {
-      parts.push(`<path d="${sh.d}" ${attrs}/>`);
-    } else if (sh.kind === 'polygon') {
-      parts.push(`<polygon points="${sh.points}" ${attrs}/>`);
-    } else {
-      parts.push(`<rect x="${sh.x}" y="${sh.y}" width="${sh.w}" height="${sh.h}" rx="${sh.rx || 0}" ${attrs}/>`);
-      if (r.labelInside) {
-        parts.push(
-          `<text x="${sh.x + sh.w / 2}" y="${sh.y + sh.h / 2}" text-anchor="middle" dominant-baseline="central" font-size="26" font-family="sans-serif" font-weight="600" fill="#1e293b">${escapeXml(r.label)}</text>`,
-        );
+export function carMapSvgString(selected: Set<string>, strokes: DamageStroke[]): string {
+  const doc = new DOMParser().parseFromString(rawSvg, 'image/svg+xml');
+  const root = doc.documentElement;
+  // Defensive: a malformed parse → embed the raw SVG unmodified (it still draws
+  // the blueprint, just without baked-in selection/strokes).
+  if (root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return rawSvg;
+
+  selected.forEach((key) => {
+    doc.querySelectorAll(`[data-panel="${key}"]`).forEach((el) => el.classList.add('selected'));
+  });
+
+  if (strokes.length) {
+    const drawLayer = doc.querySelector('#DrawLayer');
+    if (drawLayer) {
+      for (const stroke of strokes) {
+        const path = doc.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', strokeToPathD(stroke));
+        drawLayer.appendChild(path);
       }
     }
   }
-  parts.push('</svg>');
-  return parts.join('');
+
+  return new XMLSerializer().serializeToString(root);
 }

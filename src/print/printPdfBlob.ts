@@ -72,11 +72,12 @@ export async function printJobCard(html: string, filename: string): Promise<void
 }
 
 /**
- * Preview a self-contained job-card HTML page WITHOUT forcing the print dialog.
- *   • Electron: render → PDF bytes → native preview window (with its own
- *     Drucken / Als PDF speichern buttons).
- *   • Android / browser: open the page in a new tab so the user can read it.
- * Same rendering path as printJobCard, minus the automatic system print.
+ * Preview a self-contained job-card HTML page as a print preview.
+ *   • Electron: render → PDF bytes → native preview window (Chromium PDF viewer
+ *     with its own Drucken / Als PDF speichern buttons).
+ *   • Android / browser: open the page and invoke the system print dialog, which
+ *     shows the OS/browser print preview (and offers "Als PDF speichern"). No PDF
+ *     engine is bundled, so this is the browser's own print preview.
  */
 export async function previewJobCard(html: string, filename: string): Promise<void> {
   if (isElectron() && window.electronAPI) {
@@ -84,5 +85,7 @@ export async function previewJobCard(html: string, filename: string): Promise<vo
     await previewPdfBytes(bytes, filename);
     return;
   }
-  openHtmlWindow(html, 'Das Vorschaufenster wurde blockiert. Bitte Pop-ups erlauben.');
+  const win = openHtmlWindow(html, 'Das Vorschaufenster wurde blockiert. Bitte Pop-ups erlauben.');
+  // Let images/SVG lay out before invoking the print preview dialog.
+  setTimeout(() => { try { win.print(); } catch { /* user can print manually */ } }, 500);
 }

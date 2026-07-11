@@ -3,17 +3,26 @@
 // (inline CSS + inline base64 images + inline car-map SVG). Fed to the print
 // router (printToPDF on Electron, system WebView print on Android/browser).
 // German-only, so labels are hardcoded here.
+//
+// Layout mirrors the shop's original paper Auftragskarte, kept to one physical
+// sheet (double-sided):
+//   • Page 1: slim letterhead, title + Ersatzwagen (L) / dates + Schlüssel-Code
+//     (R), status, Kunde / Fahrzeug, then Arbeiten/Material (L) beside the
+//     damage map (R).
+//   • Page 2 (back): the scanned Fahrzeugausweis + any job photos.
 // ============================================================================
 
 import type { JobCardRecord, WorkshopIdentity } from '../types/jobcard';
 import { carMapSvgString } from '../carmap/svgString';
-import { regionLabel } from '../carmap/regions';
+import { panelLabel } from '../carmap/panels';
 
 export interface JobCardDocInput {
   record: JobCardRecord;
   workshop: WorkshopIdentity;
   /** Additional job photos as base64 data URLs (already inlined). */
   photoDataUrls: string[];
+  /** The scanned Fahrzeugausweis photo as a base64 data URL (if captured). */
+  ausweisDataUrl?: string;
   /** Formatted creation date for the footer. */
   createdLabel: string;
 }
@@ -24,6 +33,17 @@ const STATUS_LABEL: Record<JobCardRecord['status'], string> = {
   erledigt: 'Erledigt',
   archiviert: 'Archiviert',
 };
+
+// 'archiviert' is a digital filing state — not printed on the physical card.
+const PRINT_STATUS_ORDER: JobCardRecord['status'][] = ['offen', 'in_arbeit', 'erledigt'];
+
+/** The printable statuses as EMPTY tickable boxes — the shop marks the current
+ *  one by hand. (The app itself shows/edits the real status.) */
+function statusChecklist(): string {
+  return PRINT_STATUS_ORDER.map(
+    (s) => `<span class="st"><span class="box"></span>${esc(STATUS_LABEL[s])}</span>`,
+  ).join('');
+}
 
 function esc(v: unknown): string {
   return String(v ?? '').replace(/[<>&"]/g, (c) =>
@@ -38,18 +58,26 @@ function cell(label: string, value: unknown): string {
   return `<div class="cell"><span class="lbl">${esc(label)}</span><span class="val">${esc(v)}</span></div>`;
 }
 
-/** A free-text Arbeiten row, or '' when empty. */
+/** A header fill-in slot — ALWAYS rendered; an empty value leaves an underlined
+ *  blank to write on (matches the pre-printed fields of the paper card). */
+function slot(label: string, value: unknown): string {
+  const v = String(value ?? '').trim();
+  return `<div class="slot"><span class="k">${esc(label)}</span><span class="v">${v ? esc(v) : ''}</span></div>`;
+}
+
+/** A free-text Arbeiten row. Always rendered — an empty value leaves a blank
+ *  writing line so the card can still be filled in by hand. */
 function workRow(label: string, value: unknown): string {
   const v = String(value ?? '').trim();
-  if (!v) return '';
-  return `<tr><th>${esc(label)}</th><td>${esc(v).replace(/\n/g, '<br>')}</td></tr>`;
+  const content = v ? esc(v).replace(/\n/g, '<br>') : '<span class="wl"></span>';
+  return `<tr><th>${esc(label)}</th><td>${content}</td></tr>`;
 }
 
 export function buildJobCardHtml(input: JobCardDocInput): string {
-  const { record: r, workshop: w, photoDataUrls, createdLabel } = input;
+  const { record: r, workshop: w, photoDataUrls, ausweisDataUrl, createdLabel } = input;
 
-  const damaged = r.damagedParts.map(regionLabel).join(', ');
-  const carMap = carMapSvgString(new Set(r.damagedParts));
+  const damaged = r.damagedParts.map(panelLabel).join(', ');
+  const carMap = carMapSvgString(new Set(r.damagedParts), r.damageStrokes ?? []);
 
   const kunde = [
     cell('Name', [r.vorname, r.name].filter(Boolean).join(' ')),
@@ -69,17 +97,10 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     cell('Kilometerstand', r.kilometerstand),
     cell('Versicherung', r.versicherung),
     cell('Schaden-Nr.', r.schadenNr),
-  ].join('');
-
-  const kopf = [
-    cell('Rep.-Datum', r.repDatum),
-    cell('Abholdatum', r.abholdatum),
-    cell('Schlüssel-Code', r.schluesselCode),
-    cell('Ersatzwagen', r.ersatzwagenKopf),
-    cell('Automat', r.automat ? 'Ja' : ''),
     cell('Ersatzteile', r.ersatzteileJa ? (r.ersatzteileText || 'Ja') : ''),
   ].join('');
 
+  // Back-of-card work/material lines — always shown with a writing line.
   const arbeiten = [
     workRow('Spenglerarbeit', r.spenglerarbeit),
     workRow('Ersatzteile / Kleinmat.', r.ersatzteileKleinmat),
@@ -92,63 +113,81 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     workRow('Bemerkungen', r.notes),
   ].join('');
 
+  // Page 2 (back of sheet): the Fahrzeugausweis + any job photos. Only emitted
+  // when there's something to show, so a card without media stays a single page.
   const photos = photoDataUrls.length
-    ? `<div class="section"><h3>Fotos</h3><div class="photos">${photoDataUrls
-        .map((u) => `<img src="${u}" alt="">`)
-        .join('')}</div></div>`
+    ? `<h3 class="sec">Fotos</h3><div class="photos">${photoDataUrls.map((u) => `<img src="${u}" alt="">`).join('')}</div>`
     : '';
-
-  const contactLine = [w.telefon, w.email, w.website].filter(Boolean).map(esc).join(' · ');
+  const ausweis = ausweisDataUrl
+    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
+    : '';
+  const page2 = ausweis || photos ? `<div class="page2">${ausweis}${photos}</div>` : '';
 
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><title>Arbeitskarte ${esc(r.jobNumber)}</title>
 <style>
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #0f172a; font-size: 11px; margin: 0; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 10px; }
-  .shop { display: flex; gap: 12px; align-items: center; }
-  .shop img { max-height: 46px; max-width: 150px; object-fit: contain; }
-  .shop .name { font-size: 15px; font-weight: 700; }
-  .shop .addr { color: #475569; font-size: 10px; line-height: 1.4; }
-  .doc { text-align: right; }
-  .doc .title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-  .doc .nr { font-size: 15px; font-weight: 600; color: #2563eb; }
-  .doc .status { display: inline-block; margin-top: 3px; padding: 1px 8px; border-radius: 999px; background: #e2e8f0; font-size: 10px; font-weight: 600; }
+  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #0f172a; font-size: 11px; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #0f172a; padding-bottom: 5px; }
+  .letterhead .name { font-size: 14px; font-weight: 700; }
+  .letterhead img { max-height: 34px; max-width: 130px; object-fit: contain; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 9px 0 10px; }
+  .meta-l .title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+  .meta-l .nr { font-size: 14px; font-weight: 600; color: #2563eb; margin-bottom: 5px; }
+  .slot { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+  .slot .k { color: #64748b; font-weight: 600; white-space: nowrap; min-width: 96px; }
+  .slot .v { flex: 1; font-weight: 500; border-bottom: 1px solid #cbd5e1; min-height: 15px; }
+  .statusrow { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 8px 0 0; }
+  .statusrow .sb-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 600; }
+  .statusrow .st { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 500; color: #334155; }
+  .statusrow .box { width: 12px; height: 12px; border: 1.25px solid #64748b; border-radius: 2.5px; box-sizing: border-box; flex-shrink: 0; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; }
   .box h3 { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
   .cell { display: flex; gap: 6px; padding: 1.5px 0; }
   .cell .lbl { color: #64748b; min-width: 92px; flex-shrink: 0; }
   .cell .val { font-weight: 500; }
-  .section { margin-top: 10px; }
-  .schaden { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: start; }
-  .schaden svg { width: 200px; }
-  .schaden .parts { font-size: 11px; }
-  .schaden .parts .heading { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 4px; }
-  .schaden .parts .list { font-weight: 600; }
-  .schaden .parts .notiz { margin-top: 8px; white-space: pre-wrap; }
+  /* The sheet is folded across its centre — keep the top block filling the
+     upper half so Arbeiten + Schaden begin just below the fold line.
+     Fold = A4 centre 148.5mm − 14mm @page margin = 134.5mm of content. */
+  .top-half { min-height: 135mm; }
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .carmap-wrap svg { width: 100%; height: auto; display: block; }
+  .parts { font-size: 11px; margin-top: 6px; }
+  .parts .heading { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
+  .parts .list { font-weight: 600; }
+  .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
   table.arb { width: 100%; border-collapse: collapse; }
-  table.arb th { text-align: left; vertical-align: top; color: #64748b; font-weight: 600; width: 150px; padding: 3px 8px 3px 0; border-bottom: 1px solid #e2e8f0; }
-  table.arb td { vertical-align: top; padding: 3px 0; border-bottom: 1px solid #e2e8f0; }
-  h3.sec { margin: 12px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
+  table.arb th { text-align: left; vertical-align: top; color: #64748b; font-weight: 600; width: 130px; padding: 9px 8px 9px 0; border-bottom: 1px solid #cbd5e1; }
+  table.arb td { vertical-align: top; padding: 9px 0; border-bottom: 1px solid #cbd5e1; }
+  table.arb td .wl { display: block; height: 34px; }
+  h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
+  .page2 { break-before: page; page-break-before: always; }
+  .ausweis { max-width: 100%; max-height: 170mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; }
   .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .photos img { width: 100%; height: 90px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 4px; }
-  .foot { margin-top: 14px; color: #94a3b8; font-size: 9px; text-align: right; }
 </style></head>
 <body>
-  <div class="head">
-    <div class="shop">
-      ${w.logoDataUrl ? `<img src="${esc(w.logoDataUrl)}" alt="">` : ''}
-      <div>
-        <div class="name">${esc(w.name)}</div>
-        <div class="addr">${esc(w.strasse)}${w.strasse ? ', ' : ''}${esc(w.plzOrt)}${contactLine ? `<br>${contactLine}` : ''}</div>
-      </div>
-    </div>
-    <div class="doc">
+  <div class="top-half">
+  <div class="letterhead">
+    <div class="name">${esc(w.name)}</div>
+    ${w.logoDataUrl ? `<img src="${esc(w.logoDataUrl)}" alt="">` : ''}
+  </div>
+
+  <div class="meta">
+    <div class="meta-l">
       <div class="title">Arbeitskarte</div>
-      ${r.jobNumber ? `<div class="nr">${esc(r.jobNumber)}</div>` : ''}
-      <div class="status">${esc(STATUS_LABEL[r.status])}</div>
+      ${r.jobNumber ? `<div class="nr">Nr. ${esc(r.jobNumber)}</div>` : ''}
+      ${slot('Ersatzwagen', r.ersatzwagenKopf)}
+      ${slot('Automat', r.automat ? 'Ja' : '')}
+    </div>
+    <div class="meta-r">
+      ${slot('Erstellt', createdLabel)}
+      ${slot('Rep.-Datum', r.repDatum)}
+      ${slot('Abholdatum', r.abholdatum)}
+      ${slot('Schlüssel-Code', r.schluesselCode)}
+      <div class="statusrow"><span class="sb-label">Status</span>${statusChecklist()}</div>
     </div>
   </div>
 
@@ -156,27 +195,24 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     <div class="box"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}</div>
     <div class="box"><h3>Fahrzeug</h3>${fahrzeug || '<div class="cell"><span class="val">—</span></div>'}</div>
   </div>
+  </div>
 
-  ${kopf ? `<div class="section"><div class="box"><h3>Auftrag</h3><div class="cols">${kopf}</div></div></div>` : ''}
-
-  <div class="section">
-    <div class="box">
-      <h3>Schaden</h3>
-      <div class="schaden">
-        <div>${carMap}</div>
-        <div class="parts">
-          <div class="heading">Beschädigte Teile</div>
-          <div class="list">${damaged ? esc(damaged) : '—'}</div>
-          ${r.schadenNotiz ? `<div class="notiz">${esc(r.schadenNotiz)}</div>` : ''}
-        </div>
+  <div class="bottom">
+    <div>
+      <h3 class="sec">Arbeiten / Material</h3>
+      <table class="arb">${arbeiten}</table>
+    </div>
+    <div>
+      <h3 class="sec">Schaden</h3>
+      <div class="carmap-wrap">${carMap}</div>
+      <div class="parts">
+        <div class="heading">Beschädigte Teile</div>
+        <div class="list">${damaged ? esc(damaged) : '—'}</div>
+        ${r.schadenNotiz ? `<div class="notiz">${esc(r.schadenNotiz)}</div>` : ''}
       </div>
     </div>
   </div>
 
-  ${arbeiten ? `<h3 class="sec">Arbeiten / Material</h3><table class="arb">${arbeiten}</table>` : ''}
-
-  ${photos}
-
-  <div class="foot">Erstellt: ${esc(createdLabel)}</div>
+  ${page2}
 </body></html>`;
 }

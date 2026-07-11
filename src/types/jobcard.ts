@@ -5,6 +5,11 @@
 
 export type JobStatus = 'offen' | 'in_arbeit' | 'erledigt' | 'archiviert';
 
+/** One freehand damage stroke: a polyline of [x, y] points in FlatCarMap2
+ *  viewBox space ("185 460 2095 1575"), each coordinate rounded to 1 decimal. */
+export type StrokePoint = [number, number];
+export type DamageStroke = StrokePoint[];
+
 export interface JobCardRecord {
   id: string; // uuid
   jobNumber: string; // auto or manual — searchable
@@ -42,7 +47,8 @@ export interface JobCardRecord {
   freieZeilen?: string[]; // the 2 blank lines beneath
 
   // Schaden (car map)
-  damagedParts: string[]; // selected part ids (incl. frontStossstange / heckStossstange)
+  damagedParts: string[]; // selected data-panel keys of FlatCarMap2.svg (legacy ids tolerated)
+  damageStrokes: DamageStroke[]; // freehand strokes drawn on the map (viewBox coords, 1-decimal)
   schadenNotiz?: string;
 
   // Arbeiten / Material (back of card) — free text, NO calc

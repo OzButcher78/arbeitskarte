@@ -232,7 +232,10 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                // Explicit extensions alongside image/* — on Windows/Chromium the
+                // image/* filter is built from registry MIME associations and can
+                // omit .jpg/.jpeg if those aren't associated with image/jpeg.
+                accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp"
                 className="hidden"
                 onChange={(e) => { handleFilePicked(e.target.files?.[0]); e.target.value = ''; }}
               />
