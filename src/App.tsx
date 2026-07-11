@@ -34,7 +34,7 @@ import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 import DateField from './components/DateField';
 
-type View = { kind: 'list' } | { kind: 'edit'; id: string };
+type View = { kind: 'list' } | { kind: 'edit'; id: string; draft?: JobCardRecord };
 
 const STATUS_ORDER: JobStatus[] = ['offen', 'in_arbeit', 'erledigt', 'archiviert'];
 
@@ -115,13 +115,13 @@ export default function App() {
     );
   }, [cards, query]);
 
-  const handleNew = useCallback(async () => {
-    const s = await getSettings();
-    const jobNumber = s.autoJobNumbers ? await mintJobNumber() : '';
+  const handleNew = useCallback(() => {
     const now = Date.now();
+    // Build a DRAFT only — nothing is persisted, and no job number is minted (so
+    // the counter can't gap), until the user hits Speichern in the editor.
     const record: JobCardRecord = {
       id: newId(),
-      jobNumber,
+      jobNumber: '',
       status: 'offen',
       createdAt: now,
       updatedAt: now,
@@ -129,10 +129,8 @@ export default function App() {
       damageStrokes: [],
       photoIds: [],
     };
-    await saveJobCard(record);
-    await reload();
-    setView({ kind: 'edit', id: record.id });
-  }, [reload]);
+    setView({ kind: 'edit', id: record.id, draft: record });
+  }, []);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -208,6 +206,7 @@ export default function App() {
         ) : (
           <EditView
             id={view.id}
+            draft={view.draft}
             settings={settings}
             onOpenSettings={() => setSettingsOpen(true)}
             onDone={async () => {
@@ -349,11 +348,15 @@ function StatusSelect({ status, onChange }: { status: JobStatus; onChange: (s: J
 
 function EditView({
   id,
+  draft,
   settings,
   onOpenSettings,
   onDone,
 }: {
   id: string;
+  /** A new, not-yet-persisted card. When present the editor starts from it
+   *  instead of loading `id` from the DB (which wouldn't exist yet). */
+  draft?: JobCardRecord;
   settings: AppSettings;
   onOpenSettings: () => void;
   onDone: () => void;
@@ -368,8 +371,12 @@ function EditView({
   const photoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (draft) {
+      setRecord(draft); // new card — start from the in-memory draft, no DB read
+      return;
+    }
     void getJobCard(id).then((r) => setRecord(r ?? null));
-  }, [id]);
+  }, [id, draft]);
 
   // Load additional photo thumbnails whenever the photo set changes.
   const photoKey = (record?.photoIds ?? []).join(',');
@@ -422,12 +429,21 @@ function EditView({
   const update = (patch: Partial<JobCardRecord>) => setRecord((r) => (r ? { ...r, ...patch } : r));
 
   const handleSave = async () => {
-    await saveJobCard(record);
+    // Mint the auto job number now (on first save), not when the card was opened,
+    // so cancelling a new card never advances/gaps the counter.
+    let toSave = record;
+    if (settings.autoJobNumbers && !record.jobNumber.trim()) {
+      toSave = { ...record, jobNumber: await mintJobNumber() };
+      setRecord(toSave);
+    }
+    await saveJobCard(toSave);
     onDone();
   };
 
   const handleScanClick = () => {
-    if (isScanReady(settings)) setScanOpen(true);
+    // Offline OCR needs no key/ack, so the scanner opens as soon as the feature
+    // is switched on; the cloud (KI) path stays gated by isScanReady inside.
+    if (settings.docScanEnabled) setScanOpen(true);
     else {
       window.alert(t.scanConfigureFirst);
       onOpenSettings();
@@ -812,6 +828,7 @@ function EditView({
         provider={settings.docScanProvider}
         apiKey={getDocScanKey()}
         accountId={settings.docScanProviderAccountId}
+        cloudReady={isScanReady(settings)}
         country="CH"
         onApply={(fields, original) => void handleScanApply(fields, original)}
         onClose={() => setScanOpen(false)}

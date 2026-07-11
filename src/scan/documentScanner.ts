@@ -16,10 +16,13 @@ import {
   normalizeVin,
   normalizePlate,
   normalizeStammnummer,
+  type ScanFields,
   type ScanProvider,
+  type ScanProviderChoice,
   type ScanKind,
 } from './scanProviders';
 import { decodeVin } from './vinDecode';
+import { parseOcrWords } from './localOcr/parseOcrWords';
 
 export type ScanErrorCode = 'auth' | 'transport' | 'parse';
 
@@ -43,13 +46,36 @@ export interface ScanResult {
 }
 
 export interface ScanInput {
-  provider: ScanProvider;
+  provider: ScanProviderChoice;
   apiKey: string;
   imageBase64: string;
   mimeType: string;
   country?: string;
   accountId?: string;
   scanKind?: ScanKind;
+}
+
+/** Map canonical ScanFields onto the job-card ScanResult (vehicle + Halter).
+ *  Shared by the cloud and local (offline OCR) paths. `extraLowConfidence` lets
+ *  the local path flag weak reads on top of the validator's own droppedFields. */
+function toScanResult(fields: ScanFields, extraLowConfidence = false): ScanResult {
+  const sanitized = sanitizeScanFields(fields);
+  return {
+    make: sanitized.marke,
+    model: sanitized.modell,
+    licensePlate: normalizePlate(sanitized.kennzeichen),
+    chassisNr: vinForDisplay(sanitized.fahrgestellnummer),
+    stammnummer: normalizeStammnummer(sanitized.stammnummer),
+    color: sanitized.farbe,
+    erstzulassung: sanitized.erstzulassung,
+    insurance: sanitized.versicherung,
+    halterVorname: sanitized.halterVorname,
+    halterName: sanitized.halterName,
+    halterStrasse: sanitized.halterStrasse,
+    halterPlz: sanitized.halterPlz,
+    halterOrt: sanitized.halterOrt,
+    lowConfidence: sanitized.droppedFields.length > 0 || extraLowConfidence,
+  };
 }
 
 export function makeScanError(code: ScanErrorCode, message?: string): Error {
@@ -85,8 +111,27 @@ function vinForDisplay(raw: string | null): string | null {
 
 export async function scanDocument(input: ScanInput): Promise<ScanResult> {
   const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind = 'fahrzeugausweis' } = input;
-  if (!apiKey) throw makeScanError('auth', 'missing key');
   if (!imageBase64) throw makeScanError('transport', 'missing image');
+
+  // ── Local (offline) OCR path — no key, no network, no PII off-device ────────
+  if (provider === 'local') {
+    if (scanKind === 'vin') {
+      throw makeScanError('transport', 'Die Offline-Texterkennung unterstützt den VIN-Scan nicht. Bitte Online-KI verwenden.');
+    }
+    let ocr;
+    try {
+      const { runLocalOcr } = await import('./localOcr/engine');
+      const { words, width, height } = await runLocalOcr(imageBase64, mimeType);
+      ocr = parseOcrWords(words, width, height);
+    } catch (e) {
+      throw makeScanError('transport', e instanceof Error ? e.message : String(e));
+    }
+    const confs = Object.values(ocr.confidence);
+    const meanConf = confs.length ? confs.reduce((a, b) => a + b, 0) / confs.length : 0;
+    return toScanResult(ocr.fields, meanConf < 75);
+  }
+
+  if (!apiKey) throw makeScanError('auth', 'missing key');
 
   let res: Response;
   try {
@@ -143,22 +188,5 @@ export async function scanDocument(input: ScanInput): Promise<ScanResult> {
     };
   }
 
-  const parsed = parseScanResponse(provider, raw);
-  const fields = sanitizeScanFields(parsed);
-  return {
-    make: fields.marke,
-    model: fields.modell,
-    licensePlate: normalizePlate(fields.kennzeichen),
-    chassisNr: vinForDisplay(fields.fahrgestellnummer),
-    stammnummer: normalizeStammnummer(fields.stammnummer),
-    color: fields.farbe,
-    erstzulassung: fields.erstzulassung,
-    insurance: fields.versicherung,
-    halterVorname: fields.halterVorname,
-    halterName: fields.halterName,
-    halterStrasse: fields.halterStrasse,
-    halterPlz: fields.halterPlz,
-    halterOrt: fields.halterOrt,
-    lowConfidence: fields.droppedFields.length > 0,
-  };
+  return toScanResult(parseScanResponse(provider, raw));
 }

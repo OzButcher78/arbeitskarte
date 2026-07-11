@@ -28,3 +28,6 @@ Thumbs.db
 .env
 .env.local
 *.local
+
+# OCR spike — real registration photos + ground truth (PII, never commit)
+tools/ocr-spike/samples/

@@ -16,7 +16,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Camera, FolderOpen, Loader2, ScanLine, AlertTriangle, Check, Smartphone } from 'lucide-react';
+import { X, Camera, FolderOpen, Loader2, ScanLine, AlertTriangle, Check, Smartphone, Cpu, Cloud } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import CameraCaptureModal from '../capture/CameraCaptureModal';
 import PhotoCompanionPanel from './PhotoCompanionPanel';
@@ -35,11 +35,17 @@ interface DocumentScanModalProps {
   apiKey: string;
   /** Infomaniak Produkt-ID (non-secret), templated into its endpoint URL. */
   accountId?: string;
+  /** True when the cloud (KI) path is fully configured (key + ack + account).
+   *  When false, only the offline OCR engine is available. */
+  cloudReady: boolean;
   /** Country hint passed to the model (date formats). Defaults to CH. */
   country?: string;
   onApply: (fields: ScanResult, originalImageDataUrl: string) => void;
   onClose: () => void;
 }
+
+/** Which scanner runs: on-device Tesseract OCR, or the cloud vision model. */
+type ScanEngine = 'local' | 'cloud';
 
 type Phase = 'capture' | 'processing' | 'confirm' | 'error';
 type ScanTextField = Exclude<keyof ScanResult, 'lowConfidence'>;
@@ -57,18 +63,22 @@ async function encodeFullImage(dataUrl: string): Promise<{ base64: string; mimeT
 }
 
 const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
-  open, mode = 'fahrzeugausweis', provider, apiKey, accountId, country = 'CH',
+  open, mode = 'fahrzeugausweis', provider, apiKey, accountId, cloudReady, country = 'CH',
   onApply, onClose,
 }) => {
   const { t } = useLocale();
   const L = useCallback((key: string, fallback: string): string => (t as any)?.[key] || fallback, [t]);
   const isVin = mode === 'vin';
+  // Offline OCR is Fahrzeugausweis-only for now; the VIN plate read stays cloud.
+  const canUseLocal = !isVin;
 
   const [phase, setPhase] = useState<Phase>('capture');
   const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
   const [originalImageUrl, setOriginalImageUrl] = useState<string>('');
   const [errorCode, setErrorCode] = useState<'auth' | 'error' | 'nothing'>('error');
   const [fields, setFields] = useState<ScanResult>(emptyScanResult());
+  // Default to the cloud when it's configured (more accurate); otherwise offline.
+  const [engine, setEngine] = useState<ScanEngine>(cloudReady && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -79,15 +89,26 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     setOriginalImageUrl('');
     setErrorCode('error');
     setFields(emptyScanResult());
-  }, [open]);
+    setEngine(cloudReady && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
+  }, [open, cloudReady, canUseLocal]);
+
+  // Warm the on-device engine (loads the wasm/lang) as soon as offline is chosen,
+  // so the first scan isn't stuck waiting on the ~14 MB payload. Dynamic-imported
+  // so tesseract.js stays out of the main bundle until offline is actually used.
+  useEffect(() => {
+    if (open && engine === 'local') void import('./localOcr/engine').then((m) => m.warmUpLocalOcr());
+  }, [open, engine]);
 
   const runScan = useCallback(async (dataUrl: string) => {
     setOriginalImageUrl(dataUrl);
     setPhase('processing');
+    const useLocal = engine === 'local' && canUseLocal;
     try {
       const { base64, mimeType } = await encodeFullImage(dataUrl);
       const res = await scanDocument({
-        provider, apiKey, accountId, imageBase64: base64, mimeType, country, scanKind: mode,
+        provider: useLocal ? 'local' : provider,
+        apiKey: useLocal ? '' : apiKey,
+        accountId, imageBase64: base64, mimeType, country, scanKind: mode,
       });
       if (isEmptyScanResult(res)) {
         setErrorCode('nothing');
@@ -101,7 +122,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
       setErrorCode(code === 'auth' ? 'auth' : 'error');
       setPhase('error');
     }
-  }, [provider, apiKey, accountId, country, mode]);
+  }, [provider, apiKey, accountId, country, mode, engine, canUseLocal]);
 
   const handleFilePicked = (file: File | undefined) => {
     if (!file) return;
@@ -199,10 +220,41 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
           {/* ── Capture step ────────────────────────────────────────────── */}
           {phase === 'capture' && (
             <div className="space-y-3">
+              {canUseLocal && (
+                <div>
+                  <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setEngine('local')}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'local' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <Cpu size={15} /> {L('scanEngineOffline', 'Offline (OCR)')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cloudReady && setEngine('cloud')}
+                      disabled={!cloudReady}
+                      title={cloudReady ? undefined : L('scanEngineOnlineUnavailable', 'Online-KI zuerst in den Einstellungen einrichten.')}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'cloud' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'} ${!cloudReady ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    >
+                      <Cloud size={15} /> {L('scanEngineOnline', 'Online (KI)')}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    {engine === 'local'
+                      ? L('scanEngineOfflineDesc', 'Texterkennung läuft vollständig auf diesem Gerät – es verlassen keine Daten den Computer.')
+                      : cloudReady
+                        ? L('scanEngineOnlineDesc', 'Genauer – das Bild wird zur Erkennung an den in den Einstellungen gewählten Anbieter gesendet.')
+                        : L('scanEngineOnlineUnavailable', 'Online-KI zuerst in den Einstellungen einrichten.')}
+                  </p>
+                </div>
+              )}
               <p className="text-sm text-slate-600">
                 {isVin
                   ? L('scanVinCapturePrompt', 'Fahrgestellnummer (VIN) fotografieren – Windschutzscheibe, Türholm oder Armaturenbrett.')
-                  : L('scanCapturePrompt', 'Fahrzeugausweis aufnehmen oder auswählen – das ganze Bild wird gesendet.')}
+                  : engine === 'local'
+                    ? L('scanCapturePromptLocal', 'Fahrzeugausweis aufnehmen oder auswählen – die Erkennung läuft offline auf diesem Gerät.')
+                    : L('scanCapturePrompt', 'Fahrzeugausweis aufnehmen oder auswählen – das ganze Bild wird gesendet.')}
               </p>
               <div className="grid grid-cols-1 gap-2">
                 <button
@@ -243,7 +295,9 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                 <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-slate-400" />
                 <span>{isVin
                   ? L('scanVinNote', 'Es werden die Fahrgestellnummer und – falls sichtbar – das Kennzeichen erfasst.')
-                  : L('scanPrivacyNote', 'Das Foto (inkl. Halterdaten) wird zur Texterkennung an den in den Einstellungen gewählten Anbieter gesendet.')}</span>
+                  : engine === 'local'
+                    ? L('scanLocalPrivacyNote', 'Offline-Texterkennung: Foto und Halterdaten bleiben vollständig auf diesem Gerät.')
+                    : L('scanPrivacyNote', 'Das Foto (inkl. Halterdaten) wird zur Texterkennung an den in den Einstellungen gewählten Anbieter gesendet.')}</span>
               </div>
               <button
                 onClick={onClose}
@@ -258,7 +312,11 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
           {phase === 'processing' && (
             <div className="flex flex-col items-center justify-center py-12 text-slate-500">
               <Loader2 size={28} className="animate-spin mb-3 text-blue-500" />
-              <span className="text-sm">{L('scanProcessing', 'Dokument wird ausgelesen…')}</span>
+              <span className="text-sm">
+                {engine === 'local'
+                  ? L('scanLocalProcessing', 'Texterkennung läuft auf diesem Gerät … (kann einige Sekunden dauern)')
+                  : L('scanProcessing', 'Dokument wird ausgelesen…')}
+              </span>
             </div>
           )}
 
