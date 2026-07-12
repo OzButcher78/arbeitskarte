@@ -28,6 +28,15 @@ interface Props {
 
 const PROVIDER_ORDER: ScanProviderId[] = ['infomaniak', 'mistral', 'openai', 'anthropic'];
 
+/** True once the scanner has everything it needs to run the cloud path: an API
+ *  key, plus the Produkt-ID for providers that require one (Infomaniak). Used to
+ *  auto-enable the scanner so the user doesn't forget to tick "Scanner aktivieren". */
+function scanCredsComplete(key: string, accountId: string | undefined, provider: ScanProviderId): boolean {
+  if (!key.trim()) return false;
+  if (SCAN_PROVIDER_META[provider].requiresAccountId && !(accountId || '').trim()) return false;
+  return true;
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -160,10 +169,16 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] px-4"
+      // Pad the overlay by the system-bar insets so the centred dialog — and its
+      // Speichern/Abbrechen footer — never hide behind the Android status/nav bar.
+      style={{
+        paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
+        paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+      }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-full flex flex-col">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <h3 className="text-base font-semibold text-slate-800">{L('settingsTitle', 'Einstellungen')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" title={L('close', 'Schliessen')}>
@@ -317,7 +332,19 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
               {meta.requiresAccountId && (
                 <div>
                   <label className={labelCls}>{L('scanAccountId', 'Infomaniak Produkt-ID')}</label>
-                  <input className={inputCls} value={draft.docScanProviderAccountId ?? ''} onChange={(e) => update({ docScanProviderAccountId: e.target.value.trim() })} placeholder="z. B. 12345" />
+                  <input
+                    className={inputCls}
+                    value={draft.docScanProviderAccountId ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      update({ docScanProviderAccountId: v });
+                      // Auto-enable the scanner once ID + key are both present.
+                      if (!draft.docScanEnabled && scanCredsComplete(apiKey, v, draft.docScanProvider)) {
+                        update({ docScanEnabled: true });
+                      }
+                    }}
+                    placeholder="z. B. 12345"
+                  />
                 </div>
               )}
               <div>
@@ -326,7 +353,14 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
                   <input
                     type={showKey ? 'text' : 'password'}
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setApiKey(v);
+                      // Auto-enable the scanner once key (+ any required ID) is present.
+                      if (!draft.docScanEnabled && scanCredsComplete(v, draft.docScanProviderAccountId, draft.docScanProvider)) {
+                        update({ docScanEnabled: true });
+                      }
+                    }}
                     placeholder="••••••••••••"
                     autoComplete="off"
                     className={`${inputCls} pr-10`}

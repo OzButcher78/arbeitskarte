@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Arbeitskarte</string>
+    <string name="title_activity_main">Arbeitskarte</string>
+    <string name="package_name">ch.spritzwerkgrab.arbeitskarte</string>
+    <string name="custom_url_scheme">ch.spritzwerkgrab.arbeitskarte</string>
+</resources>

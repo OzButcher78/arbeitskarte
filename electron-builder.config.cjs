@@ -28,6 +28,7 @@ module.exports = {
   asar: true,
 
   win: {
+    icon: 'build/icon.ico',
     target: [{ target: 'nsis', arch: ['x64'] }],
     artifactName: 'Arbeitskarte-Setup-${version}.${ext}',
   },

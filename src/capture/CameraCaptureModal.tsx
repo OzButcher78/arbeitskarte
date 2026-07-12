@@ -8,15 +8,19 @@
 //   • variant='document' — a full-screen preview with a dotted, card-aspect
 //                          alignment outline for the Fahrzeugausweis scan, so the
 //                          user fills the frame (bigger card ⇒ better OCR).
-// The outline is PURELY COSMETIC (pointer-events-none) and is NEVER baked into the
-// captured JPEG — handleShutter rasterizes only the <video>, uncropped, so the
-// "whole image" scan contract is preserved.
+// The dotted outline itself is cosmetic (pointer-events-none, never drawn into the
+// JPEG). In document mode handleShutter CROPS the capture to that outline, so the
+// stored/scanned image is just the Fahrzeugausweis — no hand/desk/background. The
+// user aligns the WHOLE card (incl. the Halter block) inside the box, so cropping
+// trims only the surroundings, never owner data — the Settings compliance ack
+// therefore still applies. In photo mode the full frame is captured, uncropped.
 // ============================================================================
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, X, RotateCcw, Check, AlertTriangle } from 'lucide-react';
+import { Camera, X, RotateCcw, Check, AlertTriangle, Settings } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import { useAndroidBackHandler } from '../platform/androidBackHandler';
+import { openAppSettings, canOpenAppSettings } from '../platform/appSettings';
 import { documentFrameBox, fitContain } from '../scan/scanRedaction';
 
 interface CameraCaptureModalProps {
@@ -236,29 +240,44 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     const vh = video.videoHeight;
     if (!vw || !vh) return;
 
-    // Cap the captured frame to a sane long edge BEFORE rasterizing (Android
-    // heap / getUserMedia 4K guard). compressImage re-encodes downstream.
+    // Source sub-rect to capture. Default: the whole frame (photo mode). In
+    // document mode, crop to the on-screen alignment box — mapped from the
+    // object-contain display rect (contentRect) back to native pixels — so the
+    // result is just the Fahrzeugausweis the user framed, not the surroundings.
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+    if (documentMode && contentRect && contentRect.width > 8 && contentRect.height > 8) {
+      const box = documentFrameBox(contentRect.width, contentRect.height);
+      const kx = vw / contentRect.width;
+      const ky = vh / contentRect.height;
+      sx = Math.max(0, Math.round(box.x * kx));
+      sy = Math.max(0, Math.round(box.y * ky));
+      sw = Math.min(vw - sx, Math.round(box.w * kx));
+      sh = Math.min(vh - sy, Math.round(box.h * ky));
+    }
+
+    // Cap the OUTPUT long edge (Android heap / 4K guard). compressImage re-encodes
+    // downstream; here we just avoid rasterizing a needlessly huge canvas.
     const MAX_CAPTURE_DIM = 1920;
-    let w = vw;
-    let h = vh;
-    if (w > MAX_CAPTURE_DIM || h > MAX_CAPTURE_DIM) {
-      if (w >= h) {
-        h = Math.round((h / w) * MAX_CAPTURE_DIM);
-        w = MAX_CAPTURE_DIM;
-      } else {
-        w = Math.round((w / h) * MAX_CAPTURE_DIM);
-        h = MAX_CAPTURE_DIM;
-      }
+    let outW = sw;
+    let outH = sh;
+    const longEdge = Math.max(outW, outH);
+    if (longEdge > MAX_CAPTURE_DIM) {
+      const k = MAX_CAPTURE_DIM / longEdge;
+      outW = Math.round(outW * k);
+      outH = Math.round(outH * k);
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    // Only the video is drawn — the alignment outline is an overlay and is never
-    // part of the exported bytes (no crop: the whole frame is captured).
-    ctx.drawImage(video, 0, 0, w, h);
+    // Draw the (optionally cropped) source rect. The dotted outline is a separate
+    // overlay and is never part of the exported bytes.
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
 
     const blob: Blob | null = await new Promise((resolve) =>
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92),
@@ -367,18 +386,28 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     <>
       <AlertTriangle size={32} className="text-amber-400" />
       <div className="text-sm max-w-md">
-        {error === 'permission' && (tAny.cameraPermissionDenied || 'Kamera-Zugriff verweigert. Bitte in den Einstellungen erlauben und erneut versuchen.')}
+        {error === 'permission' && (tAny.cameraPermissionDenied || 'Kamera-Zugriff wurde nicht erteilt. Bitte den Zugriff in den Einstellungen erlauben und erneut versuchen.')}
         {error === 'no_device' && (tAny.cameraNoDevice || 'Keine Kamera erkannt.')}
         {error === 'start_failed' && (tAny.cameraStartFailed || 'Kamera konnte nicht gestartet werden.')}
       </div>
-      {error !== 'no_device' && (
-        <button
-          onClick={() => startStream()}
-          className="px-3 py-1.5 text-sm rounded bg-white/10 hover:bg-white/20 border border-white/20 transition-colors"
-        >
-          {tAny.cameraRetry || 'Erneut versuchen'}
-        </button>
-      )}
+      <div className="flex items-center gap-2">
+        {error === 'permission' && canOpenAppSettings() && (
+          <button
+            onClick={() => void openAppSettings()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-white/10 hover:bg-white/20 border border-white/20 transition-colors"
+          >
+            <Settings size={15} /> {tAny.cameraOpenSettings || 'Einstellungen öffnen'}
+          </button>
+        )}
+        {error !== 'no_device' && (
+          <button
+            onClick={() => startStream()}
+            className="px-3 py-1.5 text-sm rounded bg-white/10 hover:bg-white/20 border border-white/20 transition-colors"
+          >
+            {tAny.cameraRetry || 'Erneut versuchen'}
+          </button>
+        )}
+      </div>
     </>
   );
 

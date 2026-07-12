@@ -34,11 +34,13 @@ the device.
    product / package identifiers must return nothing. Never add a path reference to another repo.
 2. **Scanner privacy contract** (`src/scan/scanProviders.ts`): the extraction reads vehicle fields
    **and** the owner (Halter) block + Swiss Stammnummer — this is intentional (the shop needs it).
-   The scanner sends the **whole** captured/attached image (there is no crop or owner-block
-   redaction step — Grab wants the Halter data). Because owner PII therefore leaves the device to the
-   OCR provider, the Settings compliance ack **must stay**. A policy / contract /
-   insurance-certificate **number** is never extracted. The BYO API key lives only in the credential
-   store (`doc_scan_key`), **never** in settings/localStorage.
+   A camera capture in the Fahrzeugausweis flow is **cropped to the on-screen alignment box** (the
+   whole card the user framed — Halter block included; only the surrounding hand/desk/background is
+   trimmed); file / companion attachments are sent **as-is**. There is **no owner-block redaction
+   step** — Grab wants the Halter data — so owner PII still leaves the device to the OCR provider and
+   the Settings compliance ack **must stay**. A policy / contract / insurance-certificate **number**
+   is never extracted. The BYO API key lives only in the credential store (`doc_scan_key`), **never**
+   in settings/localStorage.
 3. **Print = `printToPDF`, not `window.print()` on Electron.** Desktop renders A4 via an offscreen
    `webContents.printToPDF` and previews the bytes; Android/browser fall back to the system print
    dialog. Never bundle Puppeteer/Chromium.

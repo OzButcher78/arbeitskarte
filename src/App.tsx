@@ -189,9 +189,16 @@ export default function App() {
   }, [t.printFailed]);
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-900">
+    // paddingBottom clears the Android navigation bar (edge-to-edge WebView on
+    // targetSdk 36) so the editor's Speichern/Abbrechen row isn't hidden behind it.
+    <div className="min-h-full bg-slate-50 text-slate-900" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-3">
+        {/* Extra top padding = status-bar inset, so the title clears the Android
+            status bar (clock/battery) instead of sitting underneath it. */}
+        <div
+          className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-3"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+        >
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold tracking-tight">{t.appTitle}</h1>
             <span className="text-xs text-slate-400">v{version}</span>
@@ -276,6 +283,10 @@ function PreviewModal({ html, onPrint, onClose }: { html: string; onPrint: () =>
   return (
     <div
       className="fixed inset-0 z-30 flex flex-col bg-slate-900/60 p-4"
+      style={{
+        paddingTop: 'calc(1rem + env(safe-area-inset-top))',
+        paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+      }}
       onClick={onClose}
     >
       <div

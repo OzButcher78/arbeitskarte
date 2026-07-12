@@ -11,6 +11,16 @@
   select:not(:disabled) {
     cursor: pointer;
   }
+
+  /* ── Snappy taps on the Android tablet ──────────────────────────────────
+     Without this, the WebView holds every tap ~300 ms to see if a second one
+     (double-tap-to-zoom) is coming — which reads as "I had to tap 2–3 times".
+     `manipulation` keeps panning/pinch-zoom but drops the tap delay, so a
+     single tap fires immediately. Also kill the grey tap-flash overlay. */
+  button, [role="button"], a, select, input, textarea, label, summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 html, body, #root {

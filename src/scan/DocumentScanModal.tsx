@@ -192,10 +192,16 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4"
+      // Inset by the system-bar heights so the dialog + its footer stay clear of
+      // the Android status/nav bar (edge-to-edge WebView).
+      style={{
+        paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
+        paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+      }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-full flex flex-col">
         {/* Header */}
         <div className="flex items-start justify-between p-5 border-b border-slate-100">
           <div className="flex items-center gap-3">

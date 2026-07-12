@@ -9,6 +9,7 @@
 
 import { app, BrowserWindow, Menu, ipcMain, shell, session } from 'electron';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 
 // Pin the userData folder to 'Arbeitskarte' (IndexedDB, localStorage,
 // credentials.enc all derive from app.getPath('userData')). Must run before
@@ -144,6 +145,11 @@ function createWindow(): void {
     }
   }
 
+  // In dev the window/taskbar icon comes from here; packaged builds get it from
+  // the exe resource (electron-builder → build/icon.ico), and this path won't
+  // exist inside the asar, so fall back to undefined there.
+  const devIconPath = path.join(__dirname, '..', 'build', 'icon.png');
+
   mainWindow = new BrowserWindow({
     x: windowState?.x,
     y: windowState?.y,
@@ -152,6 +158,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 680,
     show: false,
+    icon: existsSync(devIconPath) ? devIconPath : undefined,
     backgroundColor: APP_BG,
     autoHideMenuBar: true,
     title: 'Arbeitskarte',

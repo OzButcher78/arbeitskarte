@@ -1,0 +1,42 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E5372"/>
+      <stop offset="1" stop-color="#16293D"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF1F4"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <!-- Background tile -->
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#bg)"/>
+
+  <!-- Job card, slightly tilted -->
+  <g transform="rotate(-5 128 132)" filter="url(#shadow)">
+    <rect x="50" y="40" width="156" height="184" rx="15" fill="url(#card)"/>
+
+    <!-- Red header stripe -->
+    <path d="M50 55 A15 15 0 0 1 65 40 L191 40 A15 15 0 0 1 206 55 L206 98 L50 98 Z" fill="#D93A2B"/>
+
+    <!-- White car silhouette in stripe -->
+    <g transform="translate(66 52)" fill="#FFFFFF">
+      <path d="M2 28 C2 23 6 21 12 20 L34 17 C42 6 55 2 62 2 C69 2 82 6 90 17 L112 20 C118 21 122 23 122 28 L122 30 C122 32 120 33 117 33 L7 33 C4 33 2 32 2 30 Z"/>
+      <circle cx="32" cy="33" r="8.5"/>
+      <circle cx="92" cy="33" r="8.5"/>
+    </g>
+
+    <!-- Card content lines -->
+    <rect x="68" y="116" width="120" height="12" rx="6" fill="#AEB9C4"/>
+    <rect x="68" y="142" width="94" height="12" rx="6" fill="#C6CFD8"/>
+    <rect x="68" y="168" width="106" height="12" rx="6" fill="#C6CFD8"/>
+
+    <!-- Done checkbox, bottom right -->
+    <rect x="156" y="188" width="32" height="32" rx="8" fill="#D93A2B"/>
+    <path d="M164 204 L170.5 211 L181 197" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

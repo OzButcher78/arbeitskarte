@@ -16,6 +16,16 @@
 
 import type { OcrWord } from './parseOcrWords';
 
+/** Long-edge cap (px) for the OCR working image — the single biggest lever on
+ *  mobile recognise time (single-thread wasm). Card text stays legible at 1600. */
+const OCR_MAX_EDGE = 1600;
+
+/** Hard ceiling on a single offline recognise. Prevents the "stuck processing
+ *  for minutes" hang: if the device can't finish in time we fail with a hint to
+ *  use the online KI, rather than sitting forever. Generous enough to let a
+ *  legit scan finish on a slow tablet CPU, low enough to never feel hung. */
+const OCR_TIMEOUT_MS = 90_000;
+
 // tesseract.js Worker — typed loosely to avoid bundling its types into the app.
 let workerPromise: Promise<any> | null = null;
 
@@ -33,7 +43,9 @@ async function getWorker(): Promise<any> {
         workerPath: `${base}worker.min.js`,
         corePath: base, // directory — only the SIMD LSTM core is vendored (all targets have WASM SIMD)
         langPath: base.replace(/\/$/, '') + '/lang',
-        gzip: true,
+        // gzip:false → fetch the plain `deu.traineddata`. A `.gz` is auto-gunzipped
+        // and renamed by Android's AAPT, so it 404s in the APK (see vendor-tesseract.mjs).
+        gzip: false,
         cacheMethod: 'none',
       });
       await worker.setParameters({
@@ -103,15 +115,27 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  */
 async function preprocessForOcr(dataUrl: string): Promise<{ dataUrl: string; width: number; height: number }> {
   const img = await loadImage(dataUrl);
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
+  const natW = img.naturalWidth || img.width;
+  const natH = img.naturalHeight || img.height;
+  // Downscale FIRST so both this pixel pass AND Tesseract itself work on far
+  // fewer pixels. On the Android tablet (single-thread wasm) a 2560px frame with
+  // PSM 11 takes minutes; ~1600px keeps small card text legible and cuts it to
+  // seconds. No upscaling — a smaller source is left as-is.
+  let w = natW;
+  let h = natH;
+  const longEdge = Math.max(w, h);
+  if (longEdge > OCR_MAX_EDGE) {
+    const k = OCR_MAX_EDGE / longEdge;
+    w = Math.round(w * k);
+    h = Math.round(h * k);
+  }
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx || !w || !h) return { dataUrl, width: w, height: h };
+  if (!ctx || !w || !h) return { dataUrl, width: natW, height: natH };
 
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, 0, 0, w, h);
   const image = ctx.getImageData(0, 0, w, h);
   const px = image.data;
   const n = w * h;
@@ -147,13 +171,46 @@ export interface LocalOcrResult {
   height: number;
 }
 
-/** Recognise a full-frame image entirely on-device, applying the winning spike
- *  preprocessing first. `imageBase64` may be a bare base64 string or a data: URL. */
-export async function runLocalOcr(imageBase64: string, mimeType: string): Promise<LocalOcrResult> {
+/** Terminate and drop the cached worker so the next scan starts clean. Called
+ *  after a timeout, where the worker may be stuck mid-recognise and unusable. */
+async function resetWorker(): Promise<void> {
+  const p = workerPromise;
+  workerPromise = null;
+  try {
+    const w = await p;
+    await w?.terminate?.();
+  } catch {
+    /* already torn down */
+  }
+}
+
+async function runLocalOcrInner(imageBase64: string, mimeType: string): Promise<LocalOcrResult> {
   const worker = await getWorker();
   const mime = mimeType || 'image/jpeg';
   const srcUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:${mime};base64,${imageBase64}`;
   const prepped = await preprocessForOcr(srcUrl);
   const { data } = await worker.recognize(prepped.dataUrl, {}, { blocks: true, text: false });
   return { words: flattenWords(data), width: prepped.width, height: prepped.height };
+}
+
+/** Recognise a (cropped) card image entirely on-device, applying the winning
+ *  spike preprocessing first. `imageBase64` may be a bare base64 string or a
+ *  data: URL. Bounded by OCR_TIMEOUT_MS so it can never hang indefinitely. */
+export async function runLocalOcr(imageBase64: string, mimeType: string): Promise<LocalOcrResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void resetWorker();
+      reject(
+        new Error(
+          'Die Offline-Texterkennung hat zu lange gedauert. Bitte näher/schärfer fotografieren oder die Online-KI verwenden.',
+        ),
+      );
+    }, OCR_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([runLocalOcrInner(imageBase64, mimeType), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

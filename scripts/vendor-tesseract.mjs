@@ -13,7 +13,8 @@
 // dropping both trims the vendored payload from ~13.9 MB to ~4.8 MB.
 // ============================================================================
 
-import { mkdirSync, copyFileSync, existsSync, statSync } from 'node:fs';
+import { mkdirSync, copyFileSync, existsSync, statSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,8 +27,6 @@ const copies = [
   ['node_modules/tesseract.js/dist/worker.min.js', 'worker.min.js'],
   // SIMD LSTM core only — single-file build with the wasm embedded as base64.
   ['node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js'],
-  // Reuse the traineddata already vendored for the spike (tessdata_fast, German).
-  ['tools/ocr-spike/tessdata/deu.traineddata.gz', 'lang/deu.traineddata.gz'],
 ];
 
 let total = 0;
@@ -44,4 +43,25 @@ for (const [from, to] of copies) {
   total += kb;
   console.log(`  ${to.padEnd(34)} ${kb} KB`);
 }
+
+// German traineddata — DECOMPRESS the vendored .gz to a plain .traineddata.
+// Android's AAPT auto-gunzips every *.gz asset and drops the extension when
+// packing the APK, so a shipped `deu.traineddata.gz` 404s at runtime (the file
+// on device is `deu.traineddata`). Shipping it already-decompressed — and
+// loading it with `gzip:false` in engine.ts — gives ONE filename that resolves
+// identically under Vite dev, packaged Electron and the Android WebView.
+{
+  const src = join(root, 'tools/ocr-spike/tessdata/deu.traineddata.gz');
+  if (!existsSync(src)) {
+    console.error('MISSING: tools/ocr-spike/tessdata/deu.traineddata.gz');
+    process.exit(1);
+  }
+  writeFileSync(join(lang, 'deu.traineddata'), gunzipSync(readFileSync(src)));
+  // Drop any stale gzipped copy from an earlier vendoring.
+  rmSync(join(lang, 'deu.traineddata.gz'), { force: true });
+  const kb = Math.round(statSync(join(lang, 'deu.traineddata')).size / 1024);
+  total += kb;
+  console.log(`  ${'lang/deu.traineddata'.padEnd(34)} ${kb} KB (decompressed)`);
+}
+
 console.log(`\npublic/tesseract/ vendored — ${(total / 1024).toFixed(1)} MB total`);
