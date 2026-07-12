@@ -159,7 +159,8 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .schaden-full { margin-top: 4mm; }
   .carmap-big { text-align: center; margin: 3mm 0; }
   .carmap-big svg { width: 140mm; max-width: 100%; height: auto; display: inline-block; }
-  .parts { font-size: 11px; margin-top: 4px; text-align: center; }
+  /* Car map stays centred (.carmap-big); the parts title + text align left. */
+  .parts { font-size: 11px; margin-top: 4px; text-align: left; }
   .parts .heading { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
   .parts .list { font-weight: 600; }
   .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
