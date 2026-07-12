@@ -1,11 +1,13 @@
 // ============================================================================
 // Print router — HTML → PDF bytes → preview/print. Platform-agnostic call site.
 //   • Electron: printToPdf (offscreen printToPDF) + printPdf (native preview).
-//   • Android (Phase 4): render into a WebView and invoke system print.
-//   • Browser (dev): open the PDF blob in a new tab as a fallback.
+//   • Android: native PrinterPlugin (Android Print Framework) → system print
+//     dialog. The WebView's own window.print() is a no-op, so we must go native.
+//   • Browser (dev): open the HTML in a new tab and invoke window.print().
 // ============================================================================
 
 import { isElectron } from '../platform/detect';
+import { canNativePrint, nativePrintHtml } from '../platform/androidPrint';
 
 function ipcError(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'error' in body) {
@@ -66,6 +68,11 @@ export async function printJobCard(html: string, filename: string): Promise<void
     await previewPdfBytes(bytes, filename);
     return;
   }
+  if (canNativePrint()) {
+    // Android: hand the HTML to the system print dialog (no trap window).
+    await nativePrintHtml(html, filename.replace(/\.pdf$/i, ''));
+    return;
+  }
   const win = openHtmlWindow(html, 'Das Druckfenster wurde blockiert. Bitte Pop-ups erlauben.');
   // Let images/SVG lay out before invoking the print dialog.
   setTimeout(() => { try { win.print(); } catch { /* user can print manually */ } }, 500);
@@ -83,6 +90,11 @@ export async function previewJobCard(html: string, filename: string): Promise<vo
   if (isElectron() && window.electronAPI) {
     const bytes = await renderHtmlToPdfBytes(html, filename);
     await previewPdfBytes(bytes, filename);
+    return;
+  }
+  if (canNativePrint()) {
+    // Android: the system print dialog IS the preview (shows the A4 layout).
+    await nativePrintHtml(html, filename.replace(/\.pdf$/i, ''));
     return;
   }
   const win = openHtmlWindow(html, 'Das Vorschaufenster wurde blockiert. Bitte Pop-ups erlauben.');
