@@ -6,8 +6,11 @@
 // Run after `npm install` or when bumping tesseract.js; the OUTPUT is committed.
 //   node scripts/vendor-tesseract.mjs
 //
-// We ship only the LSTM cores (the engine runs OEM.LSTM_ONLY): the SIMD build
-// (used by every modern engine) plus the plain build as a fallback.
+// We ship ONLY the SIMD LSTM core (the engine runs OEM.LSTM_ONLY, and every
+// target — Electron/Chromium and the Android WebView — supports WASM SIMD). The
+// `.wasm.js` is a single-file emscripten build with the wasm embedded as base64,
+// so the standalone `.wasm` is redundant and the non-SIMD fallback is unneeded;
+// dropping both trims the vendored payload from ~13.9 MB to ~4.8 MB.
 // ============================================================================
 
 import { mkdirSync, copyFileSync, existsSync, statSync } from 'node:fs';
@@ -21,10 +24,8 @@ mkdirSync(lang, { recursive: true });
 
 const copies = [
   ['node_modules/tesseract.js/dist/worker.min.js', 'worker.min.js'],
-  ['node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm', 'tesseract-core-simd-lstm.wasm'],
+  // SIMD LSTM core only — single-file build with the wasm embedded as base64.
   ['node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js'],
-  ['node_modules/tesseract.js-core/tesseract-core-lstm.wasm', 'tesseract-core-lstm.wasm'],
-  ['node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js', 'tesseract-core-lstm.wasm.js'],
   // Reuse the traineddata already vendored for the spike (tessdata_fast, German).
   ['tools/ocr-spike/tessdata/deu.traineddata.gz', 'lang/deu.traineddata.gz'],
 ];

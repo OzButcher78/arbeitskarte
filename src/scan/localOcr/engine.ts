@@ -1,7 +1,7 @@
 // ============================================================================
 // Local (offline) OCR engine — RENDERER only. Runs Tesseract.js entirely on the
 // device: no network, no API key, no PII leaving the machine. Dynamically
-// imported so the ~14 MB wasm/worker/lang payload loads ONLY when the user picks
+// imported so the ~5 MB wasm/worker/lang payload loads ONLY when the user picks
 // the offline scanner (never for the cloud path or app start).
 //
 // All runtime assets are served from the app itself (public/tesseract/, vendored
@@ -31,7 +31,7 @@ async function getWorker(): Promise<any> {
       const base = assetBase();
       const worker = await createWorker('deu', OEM.LSTM_ONLY, {
         workerPath: `${base}worker.min.js`,
-        corePath: base, // directory — tesseract picks the (simd-)lstm core by capability
+        corePath: base, // directory — only the SIMD LSTM core is vendored (all targets have WASM SIMD)
         langPath: base.replace(/\/$/, '') + '/lang',
         gzip: true,
         cacheMethod: 'none',
