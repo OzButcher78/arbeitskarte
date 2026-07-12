@@ -120,10 +120,12 @@ export default function App() {
     );
   }, [cards, query]);
 
-  const handleNew = useCallback(() => {
+  const handleNew = useCallback(async () => {
     const now = Date.now();
-    // Build a DRAFT only — nothing is persisted, and no job number is minted (so
-    // the counter can't gap), until the user hits Speichern in the editor.
+    // Build a DRAFT — nothing is persisted until Speichern. The Auftrags-Nr. IS
+    // minted right here though (shop request: the number must be visible the
+    // moment the card opens, e.g. to label the physical folder). Like the paper
+    // pad, a cancelled card therefore consumes its number (counter gap).
     const record: JobCardRecord = {
       id: newId(),
       jobNumber: '',
@@ -134,8 +136,15 @@ export default function App() {
       damageStrokes: [],
       photoIds: [],
     };
+    if (settings.autoJobNumbers) {
+      try {
+        record.jobNumber = await mintJobNumber();
+      } catch {
+        /* leave empty — Speichern mints as fallback */
+      }
+    }
     setView({ kind: 'edit', id: record.id, draft: record });
-  }, []);
+  }, [settings.autoJobNumbers]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -633,8 +642,9 @@ function EditView({
   const update = (patch: Partial<JobCardRecord>) => setRecord((r) => (r ? { ...r, ...patch } : r));
 
   const handleSave = async () => {
-    // Mint the auto job number now (on first save), not when the card was opened,
-    // so cancelling a new card never advances/gaps the counter.
+    // Fallback mint: the number is normally assigned when the card is opened
+    // (handleNew), so this only fires if that failed or auto-numbering was
+    // switched on after the draft was created.
     let toSave = record;
     if (settings.autoJobNumbers && !record.jobNumber.trim()) {
       toSave = { ...record, jobNumber: await mintJobNumber() };

@@ -140,26 +140,26 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
 <style>
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #0f172a; font-size: 11px; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #0f172a; padding-bottom: 5px; }
-  .letterhead .name { font-size: 14px; font-weight: 700; }
+  /* All text pure black (shop request) — structure lines a neutral dark gray. */
+  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #000; font-size: 14px; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+  .letterhead .name { font-size: 16px; font-weight: 700; }
   .letterhead img { max-height: 34px; max-width: 240px; object-fit: contain; }
-  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 9px 0 10px; }
-  .meta-l .title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
-  .meta-l .nr { font-size: 14px; font-weight: 600; color: #2563eb; margin-bottom: 5px; }
-  .slot { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
-  .slot .k { color: #64748b; font-weight: 600; white-space: nowrap; min-width: 96px; }
-  .slot .v { flex: 1; font-weight: 500; border-bottom: 1px solid #cbd5e1; min-height: 15px; }
-  .statusrow { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 8px 0 0; }
-  .statusrow .sb-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 600; }
-  .statusrow .st { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 500; color: #334155; }
-  .statusrow .box { width: 12px; height: 12px; border: 1.25px solid #64748b; border-radius: 2.5px; box-sizing: border-box; flex-shrink: 0; }
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; }
-  .box h3 { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
-  .cell { display: flex; gap: 6px; padding: 1.5px 0; }
-  .cell .lbl { color: #64748b; min-width: 92px; flex-shrink: 0; }
-  .cell .val { font-weight: 500; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 10px 0 10px; }
+  .meta-l .title { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+  .meta-l .nr { font-size: 16px; font-weight: 700; color: #000; margin: 5px 0 10px; }
+  .slot { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
+  .slot .k { color: #000; font-weight: 600; white-space: nowrap; min-width: 112px; }
+  .slot .v { flex: 1; font-weight: 700; border-bottom: 1px solid #666; min-height: 19px; }
+  .statusrow { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin: 8px 0 0; }
+  .statusrow .st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: #000; }
+  .statusrow .box { width: 15px; height: 15px; border: 1.5px solid #000; border-radius: 3px; box-sizing: border-box; flex-shrink: 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .box { border: 1px solid #666; border-radius: 6px; padding: 10px 13px; }
+  .box h3 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; }
+  .cell { display: flex; gap: 8px; padding: 2px 0; }
+  .cell .lbl { color: #000; min-width: 112px; flex-shrink: 0; }
+  .cell .val { font-weight: 700; }
   /* The sheet is folded across its centre — keep the top block filling the
      upper half so the damage map begins just below the fold line.
      Fold = A4 centre 148.5mm − 14mm @page margin = 134.5mm of content. */
@@ -169,15 +169,19 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .carmap-big { text-align: center; margin: 3mm 0; }
   .carmap-big svg { width: 140mm; max-width: 100%; height: auto; display: inline-block; }
   /* Car map stays centred (.carmap-big); the parts title + text align left. */
+  /* Bottom half of page 1 (map + parts): sizes frozen per the shop — only the
+     text colour goes black here. */
   .parts { font-size: 11px; margin-top: 4px; text-align: left; }
-  .parts .heading { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
+  .parts .heading { color: #000; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
   .parts .list { font-weight: 600; }
   .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
+  /* Back page: bigger labels; row height unchanged (taller line, less padding)
+     so the 9 rows still fill exactly the top half above the fold. */
   table.arb { width: 100%; border-collapse: collapse; }
-  table.arb th { text-align: left; vertical-align: top; color: #64748b; font-weight: 600; width: 150px; padding: 9px 8px 9px 0; border-bottom: 1px solid #cbd5e1; }
-  table.arb td { vertical-align: top; padding: 9px 0; border-bottom: 1px solid #cbd5e1; }
-  table.arb td .wl { display: block; height: 34px; }
-  h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
+  table.arb th { text-align: left; vertical-align: top; color: #000; font-weight: 600; width: 175px; padding: 8px 8px 8px 0; border-bottom: 1px solid #666; }
+  table.arb td { vertical-align: top; font-weight: 700; padding: 8px 0; border-bottom: 1px solid #666; }
+  table.arb td .wl { display: block; height: 36px; }
+  h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; border-bottom: 1px solid #666; padding-bottom: 3px; }
   .page2 { break-before: page; page-break-before: always; }
   /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the fold. */
   .arb-half { min-height: 135mm; }
@@ -207,7 +211,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
       ${slot('Rep.-Datum', r.repDatum)}
       ${slot('Abholdatum', r.abholdatum)}
       ${slot('Schlüssel-Code', r.schluesselCode)}
-      <div class="statusrow"><span class="sb-label">Status</span>${statusChecklist()}</div>
+      <div class="statusrow">${statusChecklist()}</div>
     </div>
   </div>
 
