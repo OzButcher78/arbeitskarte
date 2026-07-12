@@ -24,6 +24,7 @@ import {
   saveFileIpc,
   revealPathIpc,
   readFileIpc,
+  writeFileToPathIpc,
 } from './ipc/fs';
 import {
   credGetIpc,
@@ -89,6 +90,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('fs:saveFile', (_event, args) => saveFileIpc(args));
   ipcMain.handle('fs:revealPath', (_event, args) => revealPathIpc(args));
   ipcMain.handle('fs:readFile', (_event, args) => readFileIpc(args));
+  ipcMain.handle('fs:writeFileToPath', (_event, args) => writeFileToPathIpc(args));
 
   ipcMain.handle('cred:get', (_event, args) => credGetIpc(args));
   ipcMain.handle('cred:set', (_event, args) => credSetIpc(args));

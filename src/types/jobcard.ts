@@ -114,6 +114,13 @@ export interface AppSettings {
   /** Vestigial: owner-block redaction. The scanner now always sends the whole
    *  image (no crop/redaction step); kept only so old stores keep merging. */
   docScanRedactOwner: boolean;
+
+  // Backup (Datensicherung) — plaintext JSON snapshots to a local folder.
+  backupEnabled: boolean;
+  backupFrequency: 'daily' | 'weekly';
+  /** Electron only: the chosen destination folder (backups land in <dir>/backups).
+   *  Android uses a fixed Documents/Arbeitskarte/backups; browser downloads. */
+  backupDir?: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -133,4 +140,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   docScanProviderAccountId: '',
   docScanComplianceAck: false,
   docScanRedactOwner: false,
+  backupEnabled: false,
+  backupFrequency: 'weekly',
 };

@@ -27,6 +27,7 @@ import { applyScanToRecord } from './scan/applyScan';
 import type { ScanResult } from './scan/documentScanner';
 import { dataUrlToBlob } from './utils/dataUrl';
 import SettingsModal from './settings/SettingsModal';
+import { maybeRunAutoBackup } from './backup/runBackup';
 import CarMap from './carmap/CarMap';
 import { panelLabel, panelCategory, type PanelCategory } from './carmap/panels';
 import CameraCaptureModal from './capture/CameraCaptureModal';
@@ -102,6 +103,9 @@ export default function App() {
   useEffect(() => {
     void reload();
     void reloadSettings();
+    // Launch auto-backup (fire-and-forget; never throws). Fetch settings directly
+    // since setSettings is async and state isn't populated yet on first mount.
+    void getSettings().then((s) => maybeRunAutoBackup(s));
   }, [reload, reloadSettings]);
 
   const filtered = useMemo(() => {
@@ -243,6 +247,7 @@ export default function App() {
           await saveSettings(s);
           setSettings(s);
         }}
+        onDataRestored={() => { void reload(); }}
         onClose={() => setSettingsOpen(false)}
       />
 

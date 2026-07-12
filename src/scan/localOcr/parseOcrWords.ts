@@ -37,6 +37,9 @@ import {
 } from '../scanProviders';
 import { decodeVin } from '../vinDecode';
 import type { ScanFields } from '../scanProviders';
+// Reuse the geometry we already trust for the owner (Halter) block: pure,
+// DOM-free module — keeps this parser pure and works under tsx in the spike.
+import { defaultRedactionBox, type Rect } from '../scanRedaction';
 
 // ----------------------------------------------------------------------------
 // Public contract
@@ -600,72 +603,224 @@ function extractInsurance(bands: Band[]): FieldHit | null {
   return null;
 }
 
-/** Halter (keeper) name + address. Best-effort: anchor the block, read the lines
- *  below; PLZ is the strong signal (4-digit Swiss postal code + town). */
-function extractHalter(bands: Band[]): {
-  vorname: FieldHit | null; name: FieldHit | null;
-  strasse: FieldHit | null; plz: FieldHit | null; ort: FieldHit | null;
-} {
-  const empty = { vorname: null, name: null, strasse: null, plz: null, ort: null };
+// A candidate free-text word for a name/town/street value: real letters, not a
+// form label, not an insurer name. `strict` (min 3 letters) rejects OCR fragments
+// like "Dt" on the name/street paths; the loose {2,} form keeps short town words.
+function isNameWord(w: PWord): boolean {
+  return /[A-Za-zÀ-ÿ]{2,}/.test(w.raw) && !looksLikeLabel(w.norm) && !KNOWN_INSURERS.has(w.norm);
+}
+function isNameWordStrict(w: PWord): boolean {
+  return /[A-Za-zÀ-ÿ]{3,}/.test(w.raw) && !looksLikeLabel(w.norm) && !KNOWN_INSURERS.has(w.norm);
+}
 
-  // locate the Halter block start band
-  let start = -1;
-  for (let i = 0; i < bands.length; i++) {
-    if (findAnchorIndex(bands[i], [...A.halter.labels, ...A.name.labels], []) >= 0) { start = i; break; }
+/** Keep only the words whose bbox centre falls inside a padded region Rect. */
+function wordsInRegion(pwords: PWord[], region: Rect, padX: number, padY: number): PWord[] {
+  const x0 = region.x - padX;
+  const x1 = region.x + region.w + padX;
+  const y0 = region.y - padY;
+  const y1 = region.y + region.h + padY;
+  return pwords.filter((w) => w.cx >= x0 && w.cx <= x1 && w.cy >= y0 && w.cy <= y1);
+}
+
+/** Split a name value-run into surname / given names. Honours the Swiss
+ *  "Name, Vornamen" comma convention (everything up to the comma = surname, so a
+ *  multi-word surname like "Von Dach" survives); with no comma the first token is
+ *  the surname and the rest are given names. Strict (min-3-letter) filtering drops
+ *  OCR fragments, so a stray "Dt" never wins. */
+function splitNameVorname(words: PWord[]): { name: FieldHit | null; vorname: FieldHit | null } {
+  if (!words.length) return { name: null, vorname: null };
+  const commaIdx = words.findIndex((w) => w.raw.includes(','));
+  const surnameToks = commaIdx >= 0 ? words.slice(0, commaIdx + 1) : words.slice(0, 1);
+  const givenToks = commaIdx >= 0 ? words.slice(commaIdx + 1) : words.slice(1);
+  const build = (toks: PWord[]): FieldHit | null => {
+    const kept = toks
+      .map((w) => ({ raw: w.raw.replace(/,/g, '').trim(), conf: w.conf, norm: w.norm }))
+      .filter((w) => /[A-Za-zÀ-ÿ]{3,}/.test(w.raw) && !looksLikeLabel(w.norm) && !KNOWN_INSURERS.has(w.norm));
+    if (!kept.length) return null;
+    return {
+      value: kept.map((w) => w.raw).join(' '),
+      conf: kept.reduce((s, w) => s + w.conf, 0) / kept.length,
+    };
+  };
+  return { name: build(surnameToks), vorname: build(givenToks) };
+}
+
+/** From a band's words, drop LEADING label / punctuation / serial-number tokens,
+ *  then take the value tokens up to the next label (≤ `max`). Unlike `cleanTokens`
+ *  this does not stop at a LEADING form label: on the Fahrzeugausweis the printed
+ *  "Name, Vornamen" / "Wohnort" labels sit to the LEFT of their value on the same
+ *  row, so we must skip past them to reach "Bühler Hans-Ueli" / "Rütimatt 5". */
+function valueAfterLabels(words: PWord[], max: number): PWord[] {
+  let i = 0;
+  while (i < words.length) {
+    const w = words[i];
+    const alnum = w.raw.replace(/[^0-9A-Za-zÀ-ÿ]/g, '');
+    if (!alnum) { i++; continue; }                  // punctuation-only
+    if (looksLikeLabel(w.norm)) { i++; continue; }  // a printed field label
+    if (/^\d{3,}$/.test(alnum)) { i++; continue; }  // a leading serial/card number
+    break;
   }
-  const searchBands = start >= 0 ? bands.slice(start, start + 6) : bands;
+  const out: PWord[] = [];
+  for (; i < words.length && out.length < max; i++) {
+    const w = words[i];
+    const alnum = w.raw.replace(/[^0-9A-Za-zÀ-ÿ]/g, '');
+    if (!alnum) continue;
+    if (looksLikeLabel(w.norm)) break;              // a trailing label = next field
+    out.push(w);
+  }
+  return out;
+}
 
-  const isName = (w: PWord) =>
-    /[A-Za-zÀ-ÿ]{2,}/.test(w.raw) && !looksLikeLabel(w.norm) && !KNOWN_INSURERS.has(w.norm);
-
-  // PLZ + Ort: "8840 Einsiedeln" — 4-digit token followed by ≤3 town words.
-  let plz: FieldHit | null = null;
-  let ort: FieldHit | null = null;
-  for (const band of searchBands) {
-    const ws = band.words;
+/** PLZ + Ort: "8840 Einsiedeln" — a 4-digit token (1000–9999) followed by ≤3 town
+ *  words. Returns the band index of the hit so the street scan can stay above it. */
+function scanPlzOrt(bands: Band[]): { plz: FieldHit; ort: FieldHit; bandIdx: number } | null {
+  for (let bi = 0; bi < bands.length; bi++) {
+    const ws = bands[bi].words;
     for (let i = 0; i < ws.length; i++) {
       const d = ws[i].raw.replace(/[^0-9]/g, '');
       if (d.length === 4 && /^\d{4}$/.test(d)) {
         const n = parseInt(d, 10);
         if (n < 1000 || n > 9999) continue;
-        const townWords = cleanTokens(ws.slice(i + 1), 3).filter(isName);
+        const townWords = cleanTokens(ws.slice(i + 1), 3).filter(isNameWord);
         if (townWords.length) {
-          plz = { value: d, conf: ws[i].conf };
-          ort = { value: townWords.map((w) => w.raw).join(' '), conf: meanConf(townWords) };
-          break;
+          return {
+            plz: { value: d, conf: ws[i].conf },
+            ort: { value: townWords.map((w) => w.raw).join(' '), conf: meanConf(townWords) },
+            bandIdx: bi,
+          };
         }
       }
     }
-    if (plz) break;
   }
+  return null;
+}
 
-  if (start < 0) return { ...empty, plz, ort };
-
-  // Name / Vorname: the first ≤3 word tokens under the "Name, Vornamen" label.
+/** Legacy (pre-region) name + street: requires the printed Halter/Name label and
+ *  a street keyword + house number. Kept as the fallback for when there is no
+ *  usable Halter region (protects the paths that already worked). */
+function legacyNameStreet(bands: Band[]): {
+  name: FieldHit | null; vorname: FieldHit | null; strasse: FieldHit | null;
+} {
   let name: FieldHit | null = null;
   let vorname: FieldHit | null = null;
   let strasse: FieldHit | null = null;
+
+  let start = -1;
+  for (let i = 0; i < bands.length; i++) {
+    if (findAnchorIndex(bands[i], [...A.halter.labels, ...A.name.labels], []) >= 0) { start = i; break; }
+  }
+  if (start < 0) return { name, vorname, strasse };
+  const searchBands = bands.slice(start, start + 6);
+
   for (let bi = start; bi < Math.min(bands.length, start + 6); bi++) {
     const idx = findAnchorIndex(bands[bi], [...A.name.labels], []);
     if (idx < 0) continue;
-    // value: right of label on same band, else next band
-    let val = cleanTokens(wordsRightOf(bands[bi], idx), 3);
-    if (!val.length && bi + 1 < bands.length) val = cleanTokens(bands[bi + 1].words, 3);
-    const names = val.filter(isName);
-    if (names.length) {
-      name = { value: names[0].raw, conf: names[0].conf };
-      if (names.length > 1) vorname = { value: names.slice(1).map((w) => w.raw).join(' '), conf: meanConf(names.slice(1)) };
-    }
+    let val = cleanTokens(wordsRightOf(bands[bi], idx), 4);
+    if (!val.length && bi + 1 < bands.length) val = cleanTokens(bands[bi + 1].words, 4);
+    const split = splitNameVorname(val);
+    name = split.name;
+    vorname = split.vorname;
     break;
   }
 
-  // Strasse: a block line with a street keyword + house number, capped at 5 tokens.
   for (const band of searchBands) {
     const joined = band.words.map((w) => w.raw).join(' ');
     if (/[A-Za-zÀ-ÿ].*\d{1,4}[a-z]?\b/.test(joined) && /(strasse|str\.|weg|gasse|platz|route|via|chemin)/i.test(joined)) {
       const ws = cleanTokens(band.words, 5);
       if (ws.length) strasse = { value: ws.map((w) => w.raw).join(' ').trim(), conf: meanConf(ws) };
       break;
+    }
+  }
+  return { name, vorname, strasse };
+}
+
+/** Halter (keeper) name + address. Region-first: restrict to the owner block
+ *  (the geometry we already trust — `defaultRedactionBox`), re-band that subset so
+ *  the right (vehicle) column can no longer jumble reading order, then read
+ *  name / street / PLZ positionally. Every sub-extractor falls back to the legacy
+ *  whole-image behaviour when the region has no usable content, so today's working
+ *  paths (notably PLZ/Ort) never regress. */
+function extractHalter(
+  bands: Band[],
+  pwords: PWord[],
+  imageWidth: number,
+  imageHeight: number,
+  country?: string,
+): {
+  vorname: FieldHit | null; name: FieldHit | null;
+  strasse: FieldHit | null; plz: FieldHit | null; ort: FieldHit | null;
+} {
+  // ── Region restriction: keep only the Halter-block words, re-band them ──
+  const haveDims = imageWidth > 0 && imageHeight > 0;
+  const region = haveDims ? defaultRedactionBox(country, imageWidth, imageHeight) : null;
+  const regionBands = region
+    ? groupBands(wordsInRegion(pwords, region, imageWidth * 0.04, imageHeight * 0.06))
+    : [];
+  const regionUsable = regionBands.some((b) => b.words.some(isNameWordStrict));
+
+  // ── PLZ / Ort: region first, whole-image fallback (never hard-restricted) ──
+  let plz: FieldHit | null = null;
+  let ort: FieldHit | null = null;
+  let plzBandIdx = -1;
+  if (regionUsable) {
+    const hit = scanPlzOrt(regionBands);
+    if (hit) { plz = hit.plz; ort = hit.ort; plzBandIdx = hit.bandIdx; }
+  }
+  if (!plz) {
+    const hit = scanPlzOrt(bands);
+    if (hit) { plz = hit.plz; ort = hit.ort; }
+  }
+
+  // ── Name / Vorname / Strasse ──
+  let name: FieldHit | null = null;
+  let vorname: FieldHit | null = null;
+  let strasse: FieldHit | null = null;
+
+  if (!regionUsable) {
+    const legacy = legacyNameStreet(bands);
+    return { name: legacy.name, vorname: legacy.vorname, strasse: legacy.strasse, plz, ort };
+  }
+
+  // Name + Strasse sit ABOVE the PLZ/Ort line: [Name] / [Strasse] / [PLZ Ort].
+  // Anchor on the PLZ band and read the content lines above it — robust against the
+  // trilingual printed labels (which sit to the LEFT of each value) and unable to
+  // ever pull the PLZ/Ort line in as the name (the "Vorname = Schwyz" failure).
+  const upperBound = plzBandIdx >= 0 ? plzBandIdx : regionBands.length;
+  const contentAbove: { toks: PWord[]; hasNumber: boolean }[] = [];
+  for (let bi = 0; bi < upperBound; bi++) {
+    const toks = valueAfterLabels(regionBands[bi].words, 5);
+    if (!toks.some(isNameWordStrict)) continue; // need a real word (drops "123456")
+    const joined = toks.map((w) => w.raw).join(' ').trim();
+    if (/^\d{4}\b/.test(joined)) continue; // a stray PLZ line — not name/street
+    contentAbove.push({ toks, hasNumber: /\d{1,4}[a-z]?\b/i.test(joined) });
+  }
+
+  if (contentAbove.length) {
+    // The street is the band that carries a HOUSE NUMBER (a far stronger, less
+    // surname-confusable signal than position: it stops "Zürcher / Beat" —
+    // an OCR-split name — from making "Beat" the street). The name is the band(s)
+    // above it, concatenated (a name split across two lines rejoins); with no
+    // numbered band, ALL the content is the name.
+    let streetIdx = -1;
+    for (let k = contentAbove.length - 1; k >= 0; k--) {
+      if (contentAbove[k].hasNumber) { streetIdx = k; break; }
+    }
+    if (streetIdx >= 0) {
+      // Keep tokens up to and including the first house number so a trailing field-
+      // number leak ("Rütimatt 5 17" → "Rütimatt 5") is dropped.
+      const st: string[] = [];
+      for (const w of contentAbove[streetIdx].toks) {
+        st.push(w.raw);
+        if (/\d/.test(w.raw)) break;
+      }
+      strasse = { value: st.join(' ').trim(), conf: meanConf(contentAbove[streetIdx].toks) };
+    }
+    const nameBands = streetIdx >= 0 ? contentAbove.slice(0, streetIdx) : contentAbove;
+    const nameToks = nameBands.flatMap((b) => b.toks).slice(0, 4);
+    if (nameToks.length) {
+      const split = splitNameVorname(nameToks);
+      name = split.name;
+      vorname = split.vorname;
     }
   }
 
@@ -678,8 +833,9 @@ function extractHalter(bands: Band[]): {
 
 export function parseOcrWords(
   words: OcrWord[],
-  _imageWidth: number,
-  _imageHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+  country?: string,
 ): ParseOcrResult {
   const fields: ScanFields = {
     marke: null, modell: null, kennzeichen: null, fahrgestellnummer: null, stammnummer: null,
@@ -724,7 +880,7 @@ export function parseOcrWords(
   set('versicherung', extractInsurance(bands));
 
   // ── Halter block (best effort) ──────────────────────────────────────────
-  const h = extractHalter(bands);
+  const h = extractHalter(bands, pwords, imageWidth, imageHeight, country);
   set('halterName', h.name);
   set('halterVorname', h.vorname);
   set('halterStrasse', h.strasse);

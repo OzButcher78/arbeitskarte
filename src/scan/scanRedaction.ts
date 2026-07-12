@@ -120,6 +120,36 @@ export function defaultRedactionBox(country: string | undefined, w: number, h: n
     : { x: mx, y: h * 0.54, w: w * 0.30, h: h * 0.36 };
 }
 
+/** Swiss Fahrzeugausweis is A6 landscape (148×105 mm ≈ 1.41). The scan camera
+ *  draws a card-shaped alignment outline of this aspect. */
+export const FAHRZEUGAUSWEIS_ASPECT = 148 / 105;
+
+/**
+ * The largest rect of `aspect` (default: card aspect) that fits inside the
+ * visible content box, centred, inset by `marginFrac` on every edge. Returned as
+ * offsets/size relative to the content box origin. Pure/DOM-free — the camera
+ * overlay adds the content-rect offset to place it on screen.
+ */
+export function documentFrameBox(
+  contentW: number,
+  contentH: number,
+  aspect: number = FAHRZEUGAUSWEIS_ASPECT,
+  marginFrac = 0.06,
+): Rect {
+  if (!(contentW > 0) || !(contentH > 0) || !(aspect > 0)) {
+    return { x: 0, y: 0, w: Math.max(0, contentW), h: Math.max(0, contentH) };
+  }
+  const availW = contentW * (1 - 2 * marginFrac);
+  const availH = contentH * (1 - 2 * marginFrac);
+  let w = availW;
+  let h = w / aspect;
+  if (h > availH) {
+    h = availH;
+    w = h * aspect;
+  }
+  return { x: (contentW - w) / 2, y: (contentH - h) / 2, w, h };
+}
+
 /** The rendered content rectangle of (natW×natH) drawn into (boxW×boxH) under
  *  CSS `object-contain` — scaled to fit, centred, with letterbox offsets. */
 export interface ContainFit {

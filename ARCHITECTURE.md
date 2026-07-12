@@ -61,9 +61,12 @@ Three runtimes, resolved by `src/platform/detect.ts`: `browser` (dev), `electron
    Hands the full original back so the card stores it.
 5. **`scan/applyScan.ts`** — merges a confirmed `ScanResult` into a `JobCardRecord` (vehicle +
    Halter → Kunde), only overwriting with non-empty values.
-6. **`scan/vinDecode.ts`** — offline WMI/year decode. (`scanRedaction.ts` and the
-   `CameraCaptureModal` `redactionGuide` overlay are retained but no longer wired into any flow —
-   dead since the crop/redaction step was dropped; safe to delete when convenient.)
+6. **`scan/vinDecode.ts`** — offline WMI/year decode. `scanRedaction.ts` is live again: its
+   `defaultRedactionBox` geometry restricts the offline OCR parser to the Halter block, and its
+   `documentFrameBox` drives the full-screen card-aspect alignment outline in `CameraCaptureModal`'s
+   `variant='document'` layout (used by the Fahrzeugausweis scan). The outline is cosmetic
+   (`pointer-events-none`) and is never baked into the captured JPEG — the whole frame is still
+   captured uncropped.
 
 ## LAN photo companion (Phase 5, Electron-only)
 

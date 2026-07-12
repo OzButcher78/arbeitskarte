@@ -29,6 +29,7 @@ declare global {
       saveFile(args: unknown): Promise<IpcResult>;
       revealPath(args: { path: string }): Promise<IpcResult>;
       readFile(args: { path: string; encoding?: 'base64' | 'text' }): Promise<IpcResult>;
+      writeFileToPath(args: { path: string; base64?: string; text?: string }): Promise<IpcResult>;
     };
     cred: {
       get(key: string): Promise<IpcResult>;

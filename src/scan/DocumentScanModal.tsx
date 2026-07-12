@@ -163,6 +163,8 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
         remainingSlots={1}
         onCapture={handleCameraCapture}
         onCancel={() => setCaptureSource(null)}
+        variant={isVin ? 'photo' : 'document'}
+        country={country}
       />
     );
   }

@@ -9,6 +9,7 @@
 
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { jsonResult, type IpcResult } from './types';
 
 function activeWindow(): BrowserWindow | undefined {
@@ -63,6 +64,33 @@ export async function revealPathIpc(args: { path: string }): Promise<IpcResult> 
     return jsonResult(200, { success: true });
   } catch (err: any) {
     return jsonResult(500, { error: String(err?.message || err) });
+  }
+}
+
+export type WriteFileToPathArgs = {
+  /** Absolute destination path. Parent directories are created as needed. */
+  path?: string;
+  base64?: string;
+  text?: string;
+};
+
+/** Silent write to an explicit path (no Save dialog) — used by the auto-backup.
+ *  Mirrors saveFileIpc minus the picker; creates the parent folder first. */
+export async function writeFileToPathIpc(args: WriteFileToPathArgs): Promise<IpcResult> {
+  if (!args?.path) return jsonResult(400, { error: 'Kein Pfad übergeben.' });
+  if (args.base64 == null && args.text == null) {
+    return jsonResult(400, { error: 'Kein Dateiinhalt übergeben.' });
+  }
+  try {
+    await fs.mkdir(path.dirname(args.path), { recursive: true });
+    if (args.base64 != null) {
+      await fs.writeFile(args.path, Buffer.from(args.base64, 'base64'));
+    } else {
+      await fs.writeFile(args.path, args.text ?? '', 'utf-8');
+    }
+    return jsonResult(200, { success: true, path: args.path });
+  } catch (err: any) {
+    return jsonResult(500, { error: 'Speichern fehlgeschlagen: ' + (err?.message || err) });
   }
 }
 

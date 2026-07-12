@@ -4,18 +4,26 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { X, Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2 } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import type { AppSettings, ScanProviderId } from '../types/jobcard';
 import { SCAN_PROVIDER_META } from '../scan/scanProviders';
 import { getDocScanKey, setDocScanKey } from '../platform/credentialStore';
 import { formatJobNumber } from '../numbering/jobNumber';
+import { runBackup, LAST_BACKUP_KEY } from '../backup/runBackup';
+import { pickBackupDir, revealBackupFolder } from '../backup/backupTarget';
+import { parseBackup, restoreBackup, hasVersionMismatch } from '../backup/restoreBackup';
+import { setMeta } from '../storage/jobCardRepository';
+import { db } from '../storage/db';
+import { isElectron, isAndroid } from '../platform/detect';
 
 interface Props {
   open: boolean;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
   onClose: () => void;
+  /** Called after a successful restore so the parent can reload the card list. */
+  onDataRestored?: () => void;
 }
 
 const PROVIDER_ORDER: ScanProviderId[] = ['infomaniak', 'mistral', 'openai', 'anthropic'];
@@ -29,7 +37,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function SettingsModal({ open, settings, onSave, onClose }: Props) {
+export default function SettingsModal({ open, settings, onSave, onClose, onDataRestored }: Props) {
   const { t } = useLocale();
   const L = (key: string, fallback: string): string => (t as any)?.[key] || fallback;
 
@@ -37,12 +45,17 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null);
+  const [backupMsg, setBackupMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setDraft(settings);
     setApiKey(getDocScanKey());
     setShowKey(false);
+    setBusy(null);
+    setBackupMsg(null);
   }, [open, settings]);
 
   if (!open) return null;
@@ -59,8 +72,85 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
     } catch { /* ignore */ }
   };
 
+  const handlePickDir = async () => {
+    const dir = await pickBackupDir();
+    if (dir) { update({ backupDir: dir }); setBackupMsg(null); }
+  };
+
+  const handleBackupNow = async () => {
+    setBusy('backup');
+    setBackupMsg(null);
+    try {
+      const res = await runBackup(draft);
+      if (res.ok) {
+        setBackupMsg({
+          ok: true,
+          text: res.method === 'download'
+            ? L('backupDoneDownload', 'Sicherung als Download gespeichert.')
+            : `${L('backupDone', 'Sicherung gespeichert')}${res.path ? ': ' + res.path : ''}`,
+        });
+      } else {
+        setBackupMsg({ ok: false, text: res.error || L('backupFailed', 'Sicherung fehlgeschlagen.') });
+      }
+    } catch (e) {
+      setBackupMsg({ ok: false, text: `${L('backupFailed', 'Sicherung fehlgeschlagen.')} ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRestoreFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const text = typeof reader.result === 'string' ? reader.result : '';
+      const env = parseBackup(text);
+      if (!env) {
+        setBackupMsg({ ok: false, text: L('restoreInvalid', 'Ungültige Sicherungsdatei.') });
+        return;
+      }
+      if (hasVersionMismatch(env)) {
+        const proceedVer = window.confirm(
+          `Diese Sicherung stammt aus einer anderen Datenbankversion (${env.dbVersion} statt ${db.verno}). ` +
+          `Es kann zu Problemen kommen. Trotzdem wiederherstellen?`,
+        );
+        if (!proceedVer) return;
+      }
+      const proceed = window.confirm(
+        `Sicherung vom ${new Date(env.exportedAt).toLocaleString('de-CH')} wiederherstellen?\n` +
+        `${env.counts.jobcards} Karten, ${env.counts.blobs} Bilder.`,
+      );
+      if (!proceed) return;
+      const replace = window.confirm(
+        'Modus wählen:\n\n[OK] = Alle aktuellen Karten ersetzen\n[Abbrechen] = Zusammenführen (aktuelle Karten behalten)',
+      );
+      if (replace && !window.confirm('Wirklich ALLE aktuellen Karten und Bilder ersetzen? Kann nicht rückgängig gemacht werden.')) {
+        return;
+      }
+      setBusy('restore');
+      setBackupMsg(null);
+      try {
+        const res = await restoreBackup(env, replace ? 'replace' : 'merge');
+        if (res.ok) {
+          setBackupMsg({ ok: true, text: `${res.jobcards} Karten und ${res.blobs} Bilder wiederhergestellt.` });
+          onDataRestored?.();
+        } else {
+          setBackupMsg({ ok: false, text: res.error || L('restoreFailed', 'Wiederherstellung fehlgeschlagen.') });
+        }
+      } finally {
+        setBusy(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleSave = () => {
     setDocScanKey(apiKey.trim());
+    // Seed lastBackupAt on first enable so auto-backup doesn't fire on the very
+    // next launch (honours the chosen interval from now).
+    if (draft.backupEnabled && !settings.backupEnabled) {
+      void setMeta(LAST_BACKUP_KEY, Date.now());
+    }
     onSave(draft);
     onClose();
   };
@@ -254,6 +344,98 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
                   <a href={meta.dpaUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline">DPA <ExternalLink size={11} /></a>
                 </span>
               </label>
+            </div>
+          </section>
+
+          {/* Datensicherung */}
+          <section>
+            <h4 className="mb-3 text-sm font-bold text-slate-700">{L('secBackup', 'Datensicherung')}</h4>
+            <label className="flex items-center justify-between gap-3 mb-3">
+              <span className="text-sm text-slate-700">{L('backupEnable', 'Automatische Sicherung')}</span>
+              <input type="checkbox" checked={draft.backupEnabled} onChange={(e) => update({ backupEnabled: e.target.checked })} className="w-5 h-5" />
+            </label>
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>{L('backupFrequency', 'Häufigkeit')}</label>
+                <select
+                  value={draft.backupFrequency}
+                  onChange={(e) => update({ backupFrequency: e.target.value as 'daily' | 'weekly' })}
+                  disabled={!draft.backupEnabled}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  <option value="daily">{L('backupDaily', 'Täglich')}</option>
+                  <option value="weekly">{L('backupWeekly', 'Wöchentlich')}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelCls}>{L('backupDir', 'Speicherort')}</label>
+                {isElectron() ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      className={`${inputCls} flex-1`}
+                      value={draft.backupDir ?? ''}
+                      readOnly
+                      placeholder={L('backupDirNone', 'Kein Ordner gewählt')}
+                    />
+                    <button
+                      onClick={() => void handlePickDir()}
+                      className="whitespace-nowrap inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <FolderOpen size={15} /> {L('backupPickDir', 'Verzeichnis wählen')}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-slate-500">
+                    {isAndroid()
+                      ? L('backupDirAndroid', 'Wird unter Dokumente/Arbeitskarte/backups gespeichert.')
+                      : L('backupDirBrowser', 'Wird als Download gespeichert.')}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => void handleBackupNow()}
+                  disabled={busy !== null || (isElectron() && !draft.backupDir)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 hover:bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy === 'backup' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  {L('backupNow', 'Jetzt sichern')}
+                </button>
+                <button
+                  onClick={() => restoreInputRef.current?.click()}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy === 'restore' ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                  {L('backupRestore', 'Wiederherstellen')}
+                </button>
+                {isElectron() && draft.backupDir && (
+                  <button
+                    onClick={() => void revealBackupFolder(draft.backupDir)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <FolderOpen size={15} /> {L('backupOpenFolder', 'Ordner öffnen')}
+                  </button>
+                )}
+              </div>
+
+              {backupMsg && (
+                <p className={`text-[12px] break-all ${backupMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{backupMsg.text}</p>
+              )}
+
+              <p className="text-[11px] text-slate-400">
+                {L('backupPrivacyNote', 'Die Sicherung ist eine unverschlüsselte JSON-Datei mit Halterdaten und Ausweisbildern – gleich schützenswert wie die App-Daten. Der Scanner-Schlüssel ist nicht enthalten.')}
+              </p>
+
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => { handleRestoreFile(e.target.files?.[0]); e.target.value = ''; }}
+              />
             </div>
           </section>
         </div>

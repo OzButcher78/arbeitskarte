@@ -122,7 +122,7 @@ export async function scanDocument(input: ScanInput): Promise<ScanResult> {
     try {
       const { runLocalOcr } = await import('./localOcr/engine');
       const { words, width, height } = await runLocalOcr(imageBase64, mimeType);
-      ocr = parseOcrWords(words, width, height);
+      ocr = parseOcrWords(words, width, height, country);
     } catch (e) {
       throw makeScanError('transport', e instanceof Error ? e.message : String(e));
     }

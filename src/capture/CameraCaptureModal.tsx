@@ -2,13 +2,22 @@
 // CAMERA CAPTURE MODAL — in-app camera with live preview + multi-shot shutter.
 // Uses navigator.mediaDevices directly so the rear camera opens on Surface
 // tablets, Android tablets, and laptops with webcams the same way.
+// ----------------------------------------------------------------------------
+// Two layouts, one code path:
+//   • variant='photo'    — the classic centered card (job photos, VIN plates).
+//   • variant='document' — a full-screen preview with a dotted, card-aspect
+//                          alignment outline for the Fahrzeugausweis scan, so the
+//                          user fills the frame (bigger card ⇒ better OCR).
+// The outline is PURELY COSMETIC (pointer-events-none) and is NEVER baked into the
+// captured JPEG — handleShutter rasterizes only the <video>, uncropped, so the
+// "whole image" scan contract is preserved.
 // ============================================================================
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, X, RotateCcw, Check, AlertTriangle } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import { useAndroidBackHandler } from '../platform/androidBackHandler';
-import { defaultRedactionBox, fitContain } from '../scan/scanRedaction';
+import { documentFrameBox, fitContain } from '../scan/scanRedaction';
 
 interface CameraCaptureModalProps {
   /** Called with the captured File[] when the user clicks Done. */
@@ -18,11 +27,15 @@ interface CameraCaptureModalProps {
   /** How many more photos the parent will accept this session. */
   remainingSlots: number;
   /**
-   * When present, draws a non-binding framing guide over the live preview (a
-   * document corner-frame + the region's redaction zone). PURELY COSMETIC —
-   * never baked into the captured frame. Omitted by normal photo capture.
+   * 'photo' (default) = the centered card camera for job photos / VIN plates.
+   * 'document' = full-screen preview with a card-aspect alignment outline for the
+   * Fahrzeugausweis scan. Drives BOTH the layout and the outline (no foot-gun of
+   * two props having to agree).
    */
-  redactionGuide?: { country?: string };
+  variant?: 'photo' | 'document';
+  /** Country hint (reserved for future country-specific framing). The A6-landscape
+   *  outline is the same for all countries, so this is currently unused. */
+  country?: string;
 }
 
 interface PendingShot {
@@ -38,11 +51,14 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   onCapture,
   onCancel,
   remainingSlots,
-  redactionGuide,
+  variant = 'photo',
+  country: _country,
 }) => {
   const { t } = useLocale();
   const tAny = t as any;
   useAndroidBackHandler(() => { onCancel(); });
+
+  const documentMode = variant === 'document';
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -157,7 +173,7 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   }, []);
 
   const measureGuide = useCallback(() => {
-    if (!redactionGuide) return;
+    if (!documentMode) return;
     const video = videoRef.current;
     if (!video) { setContentRect(null); return; }
     const natW = video.videoWidth;
@@ -167,10 +183,10 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     if (!natW || !natH || !boxW || !boxH) { setContentRect(null); return; }
     const fit = fitContain(natW, natH, boxW, boxH);
     setContentRect({ left: fit.offsetX, top: fit.offsetY, width: fit.w, height: fit.h });
-  }, [redactionGuide]);
+  }, [documentMode]);
 
   useEffect(() => {
-    if (!redactionGuide) return;
+    if (!documentMode) return;
     const video = videoRef.current;
     if (!video) return;
     const onChange = () => measureGuide();
@@ -189,7 +205,9 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       window.removeEventListener('orientationchange', onChange);
       ro?.disconnect();
     };
-  }, [redactionGuide, measureGuide]);
+    // `error` is a dep so listeners re-attach to the video element that remounts
+    // after an error → retry (the <video> is only rendered while error === '').
+  }, [documentMode, measureGuide, error]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -238,6 +256,8 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // Only the video is drawn — the alignment outline is an overlay and is never
+    // part of the exported bytes (no crop: the whole frame is captured).
     ctx.drawImage(video, 0, 0, w, h);
 
     const blob: Blob | null = await new Promise((resolve) =>
@@ -273,21 +293,184 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
   const reachedLimit = pending.length >= remainingSlots;
 
-  const guideBox =
-    redactionGuide && contentRect
-      ? defaultRedactionBox(redactionGuide.country, contentRect.width, contentRect.height)
-      : null;
-  const guidePortrait = !!contentRect && contentRect.height > contentRect.width;
-  const cornerFrame = contentRect
-    ? (() => {
-        const inX = contentRect.left + contentRect.width * 0.05;
-        const inY = contentRect.top + contentRect.height * 0.05;
-        const inW = contentRect.width * 0.9;
-        const inH = contentRect.height * 0.9;
-        return { inX, inY, inW, inH, bl: Math.min(inW, inH) * 0.12 };
-      })()
+  // Card-aspect alignment outline (document mode only), in on-screen coords.
+  const frame = documentMode && contentRect
+    ? documentFrameBox(contentRect.width, contentRect.height)
     : null;
+  const guidePortrait = !!contentRect && contentRect.height > contentRect.width;
 
+  // ── Shared render helpers (identical markup in both layouts) ──────────────
+  const renderControls = () => (
+    <>
+      <div className="w-24 flex justify-start">
+        {hasMultipleCameras && error === '' && (
+          <button
+            onClick={handleSwitchCamera}
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            title={tAny.cameraSwitch || 'Kamera wechseln'}
+          >
+            <RotateCcw size={18} />
+          </button>
+        )}
+      </div>
+
+      <button
+        onClick={handleShutter}
+        disabled={error !== '' || starting || reachedLimit}
+        className="w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-white shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+        title={reachedLimit ? (tAny.photoMaxReached || 'Maximum erreicht') : (tAny.cameraShutter || 'Auslösen')}
+        aria-label={tAny.cameraShutter || 'Auslösen'}
+      />
+
+      <div className="w-24 flex justify-end">
+        <button
+          onClick={handleDone}
+          disabled={pending.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 rounded bg-green-500 hover:bg-green-400 active:bg-green-600 text-white text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <Check size={15} />
+          {tAny.cameraDone || 'Fertig'}
+          {pending.length > 0 && (
+            <span className="ml-1 px-1.5 py-0 text-[10px] bg-white/25 rounded tabular-nums">{pending.length}</span>
+          )}
+        </button>
+      </div>
+    </>
+  );
+
+  const renderPendingStrip = () =>
+    pending.length > 0 ? (
+      <div className="bg-slate-800 px-3 py-2 border-t border-slate-700 flex items-center gap-2 overflow-x-auto pointer-events-auto">
+        {pending.map((p) => (
+          <div key={p.id} className="relative flex-shrink-0">
+            <img src={p.thumbUrl} alt="" className="w-14 h-14 object-cover rounded border border-slate-600" />
+            <button
+              onClick={() => handleRemovePending(p.id)}
+              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 hover:bg-red-400 text-white flex items-center justify-center shadow"
+              title={tAny.photoRemove || 'Entfernen'}
+            >
+              <X size={10} />
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+  const renderLimitBanner = () =>
+    reachedLimit ? (
+      <div className="bg-amber-50 text-amber-700 text-[11px] text-center py-1 border-t border-amber-200 pointer-events-auto">
+        {tAny.photoMaxReached || 'Maximum erreicht.'}
+      </div>
+    ) : null;
+
+  const renderErrorContent = () => (
+    <>
+      <AlertTriangle size={32} className="text-amber-400" />
+      <div className="text-sm max-w-md">
+        {error === 'permission' && (tAny.cameraPermissionDenied || 'Kamera-Zugriff verweigert. Bitte in den Einstellungen erlauben und erneut versuchen.')}
+        {error === 'no_device' && (tAny.cameraNoDevice || 'Keine Kamera erkannt.')}
+        {error === 'start_failed' && (tAny.cameraStartFailed || 'Kamera konnte nicht gestartet werden.')}
+      </div>
+      {error !== 'no_device' && (
+        <button
+          onClick={() => startStream()}
+          className="px-3 py-1.5 text-sm rounded bg-white/10 hover:bg-white/20 border border-white/20 transition-colors"
+        >
+          {tAny.cameraRetry || 'Erneut versuchen'}
+        </button>
+      )}
+    </>
+  );
+
+  // ── Document layout: full-screen preview + dotted card outline ────────────
+  if (documentMode) {
+    return (
+      <div className="fixed inset-0 z-[200] bg-black overflow-hidden">
+        {error === '' && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-contain"
+          />
+        )}
+
+        {error === '' && contentRect && frame && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div
+              className="absolute border-2 border-dotted border-white/85 rounded-xl"
+              style={{
+                left: contentRect.left + frame.x,
+                top: contentRect.top + frame.y,
+                width: frame.w,
+                height: frame.h,
+                boxShadow: '0 0 0 9999px rgba(0,0,0,0.30)',
+              }}
+            />
+            <div
+              className="absolute left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-medium text-center"
+              style={{ top: contentRect.top + 12, maxWidth: Math.max(0, contentRect.width - 24) }}
+            >
+              {guidePortrait
+                ? (tAny.cameraDocRotateHint || 'Gerät quer halten – so wird der Ausweis formatfüllend erfasst')
+                : (tAny.cameraDocFrameHint || 'Fahrzeugausweis formatfüllend im Rahmen ausrichten')}
+            </div>
+          </div>
+        )}
+
+        {starting && error === '' && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm pointer-events-none">
+            {tAny.cameraStarting || 'Kamera wird gestartet…'}
+          </div>
+        )}
+        {error !== '' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6 text-white">
+            {renderErrorContent()}
+          </div>
+        )}
+
+        {/* Header bar */}
+        <div
+          className="absolute top-0 inset-x-0 z-10 flex items-center justify-between px-4 pointer-events-none"
+          style={{
+            paddingTop: 'calc(0.6rem + env(safe-area-inset-top))',
+            paddingBottom: '0.6rem',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0))',
+          }}
+        >
+          <div className="flex items-center gap-2 text-white">
+            <Camera size={16} />
+            <span className="text-sm font-semibold">{tAny.scanModalTitle || 'Fahrzeugausweis scannen'}</span>
+          </div>
+          <button
+            onClick={handleCancel}
+            className="pointer-events-auto p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            title={tAny.cameraCancel || 'Abbrechen'}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Footer bar */}
+        <div
+          className="absolute bottom-0 inset-x-0 z-10 pointer-events-none"
+          style={{
+            paddingBottom: 'env(safe-area-inset-bottom)',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.6), rgba(0,0,0,0))',
+          }}
+        >
+          {renderLimitBanner()}
+          {renderPendingStrip()}
+          <div className="flex items-center justify-between gap-3 px-4 py-3 pointer-events-auto">
+            {renderControls()}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Photo layout: centered card (unchanged) ──────────────────────────────
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-2 sm:p-4">
       <div className="w-full max-w-3xl bg-slate-900 rounded-lg shadow-2xl flex flex-col overflow-hidden">
@@ -315,54 +498,6 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 muted
                 className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
               />
-              {redactionGuide && contentRect && guideBox && cornerFrame && (
-                <div className="absolute inset-0 pointer-events-none">
-                  {(['nw', 'ne', 'sw', 'se'] as const).map((c) => {
-                    const isW = c.includes('w');
-                    const isN = c.includes('n');
-                    return (
-                      <div
-                        key={c}
-                        className="absolute border-white/60"
-                        style={{
-                          width: cornerFrame.bl,
-                          height: cornerFrame.bl,
-                          left: isW ? cornerFrame.inX : cornerFrame.inX + cornerFrame.inW - cornerFrame.bl,
-                          top: isN ? cornerFrame.inY : cornerFrame.inY + cornerFrame.inH - cornerFrame.bl,
-                          borderTopWidth: isN ? 2 : 0,
-                          borderBottomWidth: isN ? 0 : 2,
-                          borderLeftWidth: isW ? 2 : 0,
-                          borderRightWidth: isW ? 0 : 2,
-                        }}
-                      />
-                    );
-                  })}
-                  <div
-                    className="absolute border-2 border-dashed border-red-500 bg-red-600/30 flex items-center justify-center"
-                    style={{
-                      left: contentRect.left + guideBox.x,
-                      top: contentRect.top + guideBox.y,
-                      width: guideBox.w,
-                      height: guideBox.h,
-                      opacity: guidePortrait ? 0.4 : 1,
-                    }}
-                  >
-                    {!guidePortrait && (
-                      <span className="px-1 text-[10px] font-semibold text-white/95 text-center leading-tight">
-                        {tAny.cameraGuideHolderLabel || 'Halterdaten'}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className="absolute left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-black/55 text-white text-[11px] font-medium text-center"
-                    style={{ top: contentRect.top + 6, maxWidth: Math.max(0, contentRect.width - 16) }}
-                  >
-                    {guidePortrait
-                      ? (tAny.cameraGuideRotateHint || 'Für ein gutes Ergebnis das Gerät quer halten')
-                      : (tAny.cameraGuideFrameHint || 'Ausweis im Rahmen ausrichten')}
-                  </div>
-                </div>
-              )}
             </div>
           )}
           {starting && error === '' && (
@@ -372,82 +507,18 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           )}
           {error !== '' && (
             <div className="flex flex-col items-center gap-3 text-center px-6 py-12 text-white">
-              <AlertTriangle size={32} className="text-amber-400" />
-              <div className="text-sm max-w-md">
-                {error === 'permission' && (tAny.cameraPermissionDenied || 'Kamera-Zugriff verweigert. Bitte in den Einstellungen erlauben und erneut versuchen.')}
-                {error === 'no_device' && (tAny.cameraNoDevice || 'Keine Kamera erkannt.')}
-                {error === 'start_failed' && (tAny.cameraStartFailed || 'Kamera konnte nicht gestartet werden.')}
-              </div>
-              {error !== 'no_device' && (
-                <button
-                  onClick={() => startStream()}
-                  className="px-3 py-1.5 text-sm rounded bg-white/10 hover:bg-white/20 border border-white/20 transition-colors"
-                >
-                  {tAny.cameraRetry || 'Erneut versuchen'}
-                </button>
-              )}
+              {renderErrorContent()}
             </div>
           )}
         </div>
 
-        {pending.length > 0 && (
-          <div className="bg-slate-800 px-3 py-2 border-t border-slate-700 flex items-center gap-2 overflow-x-auto">
-            {pending.map((p) => (
-              <div key={p.id} className="relative flex-shrink-0">
-                <img src={p.thumbUrl} alt="" className="w-14 h-14 object-cover rounded border border-slate-600" />
-                <button
-                  onClick={() => handleRemovePending(p.id)}
-                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 hover:bg-red-400 text-white flex items-center justify-center shadow"
-                  title={tAny.photoRemove || 'Entfernen'}
-                >
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {renderPendingStrip()}
 
         <div className="bg-slate-900 px-3 py-3 border-t border-slate-700 flex items-center justify-between gap-3">
-          <div className="w-24 flex justify-start">
-            {hasMultipleCameras && error === '' && (
-              <button
-                onClick={handleSwitchCamera}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                title={tAny.cameraSwitch || 'Kamera wechseln'}
-              >
-                <RotateCcw size={18} />
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={handleShutter}
-            disabled={error !== '' || starting || reachedLimit}
-            className="w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-white shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
-            title={reachedLimit ? (tAny.photoMaxReached || 'Maximum erreicht') : (tAny.cameraShutter || 'Auslösen')}
-            aria-label={tAny.cameraShutter || 'Auslösen'}
-          />
-
-          <div className="w-24 flex justify-end">
-            <button
-              onClick={handleDone}
-              disabled={pending.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 rounded bg-green-500 hover:bg-green-400 active:bg-green-600 text-white text-sm font-semibold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <Check size={15} />
-              {tAny.cameraDone || 'Fertig'}
-              {pending.length > 0 && (
-                <span className="ml-1 px-1.5 py-0 text-[10px] bg-white/25 rounded tabular-nums">{pending.length}</span>
-              )}
-            </button>
-          </div>
+          {renderControls()}
         </div>
 
-        {reachedLimit && (
-          <div className="bg-amber-50 text-amber-700 text-[11px] text-center py-1 border-t border-amber-200">
-            {tAny.photoMaxReached || 'Maximum erreicht.'}
-          </div>
-        )}
+        {renderLimitBanner()}
       </div>
     </div>
   );

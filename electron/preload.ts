@@ -61,6 +61,7 @@ const api = {
     revealPath: (args: { path: string }): Promise<IpcResult> => ipcRenderer.invoke('fs:revealPath', args),
     readFile: (args: { path: string; encoding?: 'base64' | 'text' }): Promise<IpcResult> =>
       ipcRenderer.invoke('fs:readFile', args),
+    writeFileToPath: (args: unknown): Promise<IpcResult> => ipcRenderer.invoke('fs:writeFileToPath', args),
   },
 
   // ── Encrypted credential store (safeStorage / DPAPI on Windows) ───────────

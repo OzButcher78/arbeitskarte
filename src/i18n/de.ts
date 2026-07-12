@@ -137,6 +137,9 @@ export const de: Translations = {
   addPhotoCamera: 'Kamera',
   addPhotoFile: 'Datei',
   photoMaxReached: 'Maximale Fotoanzahl erreicht.',
+  // Full-screen Fahrzeugausweis scan camera (document variant)
+  cameraDocFrameHint: 'Fahrzeugausweis formatfüllend im Rahmen ausrichten',
+  cameraDocRotateHint: 'Gerät quer halten – so wird der Ausweis formatfüllend erfasst',
 
   // LAN photo companion (Phase 5)
   scanCompanion: 'QR vom Handy',
@@ -166,4 +169,25 @@ export const de: Translations = {
   logoHeight: 'Logogrösse (Druck)',
   autoNumbers: 'Automatische Nummerierung',
   numberPreview: 'Nächste Karte',
+
+  // Datensicherung (Backup & Restore)
+  secBackup: 'Datensicherung',
+  backupEnable: 'Automatische Sicherung',
+  backupFrequency: 'Häufigkeit',
+  backupDaily: 'Täglich',
+  backupWeekly: 'Wöchentlich',
+  backupDir: 'Speicherort',
+  backupDirNone: 'Kein Ordner gewählt',
+  backupPickDir: 'Verzeichnis wählen',
+  backupDirAndroid: 'Wird unter Dokumente/Arbeitskarte/backups gespeichert.',
+  backupDirBrowser: 'Wird als Download gespeichert.',
+  backupNow: 'Jetzt sichern',
+  backupRestore: 'Wiederherstellen',
+  backupOpenFolder: 'Ordner öffnen',
+  backupDone: 'Sicherung gespeichert',
+  backupDoneDownload: 'Sicherung als Download gespeichert.',
+  backupFailed: 'Sicherung fehlgeschlagen.',
+  restoreInvalid: 'Ungültige Sicherungsdatei.',
+  restoreFailed: 'Wiederherstellung fehlgeschlagen.',
+  backupPrivacyNote: 'Die Sicherung ist eine unverschlüsselte JSON-Datei mit Halterdaten und Ausweisbildern – gleich schützenswert wie die App-Daten. Der Scanner-Schlüssel ist nicht enthalten.',
 };
