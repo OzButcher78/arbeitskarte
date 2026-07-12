@@ -112,7 +112,7 @@ export default function App() {
     const q = query.trim().toLowerCase();
     if (!q) return cards;
     return cards.filter((c) =>
-      [c.jobNumber, c.kontrollschild, c.vin, c.name]
+      [c.jobNumber, c.kontrollschild, c.vin, c.name, c.vorname, c.firma]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -448,7 +448,7 @@ function ListView(props: {
               {visible.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="px-4 py-1 font-medium">{c.jobNumber || '—'}</td>
-                  <td className="px-4 py-1">{c.name || '—'}</td>
+                  <td className="px-4 py-1">{c.name || c.vorname || c.firma || '—'}</td>
                   <td className="px-4 py-1">{c.kontrollschild || '—'}</td>
                   <td className="px-4 py-1">
                     <StatusSelect status={c.status} onChange={(s) => onStatusChange(c.id, s)} />

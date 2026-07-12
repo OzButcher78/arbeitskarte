@@ -160,14 +160,16 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .cell { display: flex; gap: 8px; padding: 2px 0; }
   .cell .lbl { color: #000; min-width: 112px; flex-shrink: 0; }
   .cell .val { font-weight: 700; }
-  /* The sheet is folded across its centre — keep the top block filling the
-     upper half so the damage map begins just below the fold line.
-     Fold = A4 centre 148.5mm − 14mm @page margin = 134.5mm of content. */
-  .top-half { min-height: 135mm; }
+  /* Kunde / Halter: pull the bold value column a little further left. */
+  .box.kunde .cell .lbl { min-width: 84px; }
+  /* The top block fills the upper part of page 1; kept short enough that the
+     damage map + beschädigte Teile + Schaden-Notiz all still fit on this one
+     sheet (the Notiz used to spill onto a near-empty page 2). */
+  .top-half { min-height: 120mm; }
   /* Page-1 bottom half: one big damage map, centred. */
-  .schaden-full { margin-top: 4mm; }
-  .carmap-big { text-align: center; margin: 3mm 0; }
-  .carmap-big svg { width: 140mm; max-width: 100%; height: auto; display: inline-block; }
+  .schaden-full { margin-top: 2mm; }
+  .carmap-big { text-align: center; margin: 2mm 0; }
+  .carmap-big svg { width: 134mm; max-width: 100%; height: auto; display: inline-block; }
   /* Car map stays centred (.carmap-big); the parts title + text align left. */
   /* Bottom half of page 1 (map + parts): sizes frozen per the shop — only the
      text colour goes black here. */
@@ -185,7 +187,8 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .page2 { break-before: page; page-break-before: always; }
   /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the fold. */
   .arb-half { min-height: 135mm; }
-  .ausweis { max-width: 100%; max-height: 116mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; }
+  /* Fill the whole bottom half of page 2 with the scanned Ausweis. */
+  .ausweis { width: 100%; max-width: 100%; max-height: 126mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 0; }
   /* Page 3+: two attached photos per page, stacked and large. */
   .photo-page { break-before: page; page-break-before: always; }
   .photo-grid { display: flex; flex-direction: column; gap: 8mm; }
@@ -216,7 +219,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   </div>
 
   <div class="cols">
-    <div class="box"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}</div>
+    <div class="box kunde"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}</div>
     <div class="box"><h3>Fahrzeug</h3>${fahrzeug || '<div class="cell"><span class="val">—</span></div>'}</div>
   </div>
   </div>
