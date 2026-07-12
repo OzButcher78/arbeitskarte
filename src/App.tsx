@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2 } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useLocale } from './i18n/locale';
 import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity, DamageStroke } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
@@ -89,6 +89,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [preview, setPreview] = useState<{ html: string; filename: string } | null>(null);
   const version = window.electronAPI?.appVersion ?? __APP_VERSION__;
 
   const reload = useCallback(async () => {
@@ -155,7 +156,22 @@ export default function App() {
     }
   }, [reload]);
 
+  // Eye icon — fast in-app HTML preview (no PDF engine round-trip).
   const handlePreview = useCallback(async (id: string) => {
+    const card = await getJobCard(id);
+    if (!card) return;
+    try {
+      const s = await getSettings();
+      const html = await renderCardHtml(card, s.workshop);
+      const nr = card.jobNumber || card.id.slice(0, 6);
+      setPreview({ html, filename: `Arbeitskarte-${nr}.pdf` });
+    } catch (err) {
+      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [t.printFailed]);
+
+  // Printer icon — render to PDF bytes and open the native print preview.
+  const handlePrintPreview = useCallback(async (id: string) => {
     const card = await getJobCard(id);
     if (!card) return;
     try {
@@ -170,25 +186,27 @@ export default function App() {
 
   return (
     <div className="min-h-full bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold tracking-tight">{t.appTitle}</h1>
-          <span className="text-xs text-slate-400">v{version}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleNew}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            <FilePlus2 size={16} /> {t.newCard}
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            title={t.settings}
-          >
-            <Settings size={16} /> {t.settings}
-          </button>
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-3">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold tracking-tight">{t.appTitle}</h1>
+            <span className="text-xs text-slate-400">v{version}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNew}
+              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              <FilePlus2 size={16} /> {t.newCard}
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              title={t.settings}
+            >
+              <Settings size={16} /> {t.settings}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -201,6 +219,7 @@ export default function App() {
             onOpen={(id) => setView({ kind: 'edit', id })}
             onDelete={handleDelete}
             onPreview={handlePreview}
+            onPrintPreview={handlePrintPreview}
             onStatusChange={handleStatusChange}
           />
         ) : (
@@ -226,6 +245,74 @@ export default function App() {
         }}
         onClose={() => setSettingsOpen(false)}
       />
+
+      {preview && (
+        <PreviewModal
+          html={preview.html}
+          onPrint={() => void previewJobCard(preview.html, preview.filename)}
+          onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** In-app HTML preview of the print layout. Renders the same self-contained
+ *  print HTML in a sandboxed iframe (fast — no PDF round-trip). The Printer
+ *  button opens the real PDF print preview. */
+function PreviewModal({ html, onPrint, onClose }: { html: string; onPrint: () => void; onClose: () => void }) {
+  const { t } = useLocale();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-30 flex flex-col bg-slate-900/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-slate-700">{t.preview}</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onPrint}
+              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              <Printer size={16} /> {t.printCard}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              title={t.close}
+              aria-label={t.close}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+          <iframe
+            title={t.preview}
+            // Inject screen-only page padding — the print HTML uses `body{margin:0}`
+            // and relies on @page margins that don't apply on screen, so without
+            // this the preview content would sit edge-to-edge. Only affects the
+            // in-app iframe; the real PDF path (printToPDF) is unchanged.
+            srcDoc={html.replace(
+              '</head>',
+              // Static preview: page padding + kill SVG pointer events so the
+              // car map's :hover fills can't trigger while mousing over it.
+              '<style>@media screen{body{padding:14mm}}svg *{pointer-events:none!important}</style></head>',
+            )}
+            className="mx-auto block h-full w-full max-w-[210mm] rounded bg-white shadow"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -237,15 +324,43 @@ function ListView(props: {
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onPreview: (id: string) => void;
+  onPrintPreview: (id: string) => void;
   onStatusChange: (id: string, status: JobStatus) => void;
 }) {
   const { t } = useLocale();
-  const { cards, query, onQuery, onOpen, onDelete, onPreview, onStatusChange } = props;
+  const { cards, query, onQuery, onOpen, onDelete, onPreview, onPrintPreview, onStatusChange } = props;
+
+  const [statusFilter, setStatusFilter] = useState<JobStatus | 'alle'>('alle');
+  const [sortField, setSortField] = useState<'nr' | 'date'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Click a sortable header: toggle direction if it's the active column,
+  // otherwise switch to it with a sensible default (dates newest-first).
+  const toggleSort = (field: 'nr' | 'date') => {
+    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortField(field);
+      setSortDir(field === 'date' ? 'desc' : 'asc');
+    }
+  };
+
+  const visible = useMemo(() => {
+    const rows = statusFilter === 'alle' ? cards : cards.filter((c) => c.status === statusFilter);
+    const sorted = [...rows].sort((a, b) => {
+      const cmp =
+        sortField === 'nr'
+          ? // Empty numbers sort last; otherwise natural (numeric-aware) order.
+            (a.jobNumber || '￿').localeCompare(b.jobNumber || '￿', 'de', { numeric: true })
+          : a.updatedAt - b.updatedAt;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [cards, statusFilter, sortField, sortDir]);
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
-        <div className="relative flex-1">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={query}
@@ -254,6 +369,20 @@ function ListView(props: {
             className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           />
         </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as JobStatus | 'alle')}
+          title={t.filterStatus}
+          aria-label={t.filterStatus}
+          className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-blue-500"
+        >
+          <option value="alle">{t.filterStatus}: {t.filterAll}</option>
+          {STATUS_ORDER.map((s) => (
+            <option key={s} value={s}>
+              {t.filterStatus}: {t[`status_${s}`]}
+            </option>
+          ))}
+        </select>
       </div>
 
       {cards.length === 0 ? (
@@ -265,25 +394,42 @@ function ListView(props: {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2.5 font-semibold">{t.colNumber}</th>
+                <SortHeader
+                  label={t.colNumber}
+                  active={sortField === 'nr'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('nr')}
+                />
                 <th className="px-4 py-2.5 font-semibold">{t.colName}</th>
                 <th className="px-4 py-2.5 font-semibold">{t.colPlate}</th>
                 <th className="px-4 py-2.5 font-semibold">{t.colStatus}</th>
-                <th className="px-4 py-2.5 font-semibold">{t.colUpdated}</th>
+                <SortHeader
+                  label={t.colUpdated}
+                  active={sortField === 'date'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('date')}
+                />
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {cards.map((c) => (
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
+                    {t.noCards}
+                  </td>
+                </tr>
+              )}
+              {visible.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-medium">{c.jobNumber || '—'}</td>
-                  <td className="px-4 py-2.5">{c.name || '—'}</td>
-                  <td className="px-4 py-2.5">{c.kontrollschild || '—'}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-1 font-medium">{c.jobNumber || '—'}</td>
+                  <td className="px-4 py-1">{c.name || '—'}</td>
+                  <td className="px-4 py-1">{c.kontrollschild || '—'}</td>
+                  <td className="px-4 py-1">
                     <StatusSelect status={c.status} onChange={(s) => onStatusChange(c.id, s)} />
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">{formatDate(c.updatedAt)}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-4 py-1 text-slate-500">{formatDate(c.updatedAt)}</td>
+                  <td className="px-4 py-1 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => onPreview(c.id)}
@@ -294,10 +440,18 @@ function ListView(props: {
                         <Eye size={15} />
                       </button>
                       <button
+                        onClick={() => onPrintPreview(c.id)}
+                        className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                        title={t.printPreview}
+                        aria-label={t.printPreview}
+                      >
+                        <Printer size={15} />
+                      </button>
+                      <button
                         onClick={() => onOpen(c.id)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                       >
-                        {t.open}
+                        {t.edit}
                       </button>
                       <button
                         onClick={() => onDelete(c.id)}
@@ -316,6 +470,40 @@ function ListView(props: {
         </div>
       )}
     </div>
+  );
+}
+
+/** A clickable column header that sorts the list — shows an up/down caret when
+ *  active, and a faint neutral caret otherwise (the affordance to click). */
+function SortHeader({
+  label,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  dir: 'asc' | 'desc';
+  onClick: () => void;
+}) {
+  return (
+    <th className="px-4 py-2.5 font-semibold">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-700 ${
+          active ? 'text-slate-700' : ''
+        }`}
+      >
+        {label}
+        {active ? (
+          dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />
+        ) : (
+          <ChevronsUpDown size={13} className="text-slate-300" />
+        )}
+      </button>
+    </th>
   );
 }
 
@@ -602,11 +790,16 @@ function EditView({
 
         {/* Kunde / Halter */}
         <Section title={t.sectionKunde}>
+          <TextField record={record} update={update} field="firma" label={t.firma} />
           <TextField record={record} update={update} field="name" label={t.colName} />
           <TextField record={record} update={update} field="vorname" label={t.vorname} />
           <TextField record={record} update={update} field="strasse" label={t.strasse} />
           <TextField record={record} update={update} field="plzOrt" label={t.plzOrt} />
           <TextField record={record} update={update} field="telefon" label={t.telefon} />
+          <TextField record={record} update={update} field="telefon2" label={t.telefon2} />
+          <div className="sm:col-span-2">
+            <TextAreaField record={record} update={update} field="kundeNotiz" label={t.kundeNotiz} rows={2} />
+          </div>
         </Section>
           </div>
 
@@ -622,8 +815,6 @@ function EditView({
           <TextField record={record} update={update} field="erstzulassung" label={t.erstzulassung} />
           <TextField record={record} update={update} field="versicherung" label={t.versicherung} />
           <TextField record={record} update={update} field="schadenNr" label={t.schadenNr} />
-          <CheckField record={record} update={update} field="ersatzteileJa" label={t.ersatzteileJa} />
-          <TextField record={record} update={update} field="ersatzteileText" label={t.ersatzteileText} />
         </Section>
           </div>
         </div>

@@ -73,7 +73,7 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <h3 className="text-base font-semibold text-slate-800">{L('settingsTitle', 'Einstellungen')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" title={L('close', 'Schliessen')}>
@@ -116,7 +116,14 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
                 <label className={labelCls}>{L('logo', 'Logo')}</label>
                 <div className="flex items-center gap-3">
                   {draft.workshop.logoDataUrl && (
-                    <img src={draft.workshop.logoDataUrl} alt="Logo" className="h-10 max-w-[120px] object-contain rounded border border-slate-200" />
+                    <img
+                      src={draft.workshop.logoDataUrl}
+                      alt="Logo"
+                      // Mirror the print letterhead: max-height + generous max-width
+                      // so the width scales with the aspect ratio, not a fixed cap.
+                      style={{ maxHeight: draft.workshop.logoHeightPx ?? 34, maxWidth: 240 }}
+                      className="object-contain rounded border border-slate-200"
+                    />
                   )}
                   <button
                     onClick={() => logoInputRef.current?.click()}
@@ -140,6 +147,25 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
                     onChange={(e) => { void handleLogo(e.target.files?.[0]); e.target.value = ''; }}
                   />
                 </div>
+                {draft.workshop.logoDataUrl && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                      {L('logoHeight', 'Logogrösse (Druck)')}
+                    </label>
+                    <input
+                      type="range"
+                      min={16}
+                      max={90}
+                      step={1}
+                      value={draft.workshop.logoHeightPx ?? 34}
+                      onChange={(e) => updateShop({ logoHeightPx: parseInt(e.target.value, 10) })}
+                      className="flex-1 accent-blue-600"
+                    />
+                    <span className="w-12 text-right text-xs tabular-nums text-slate-600">
+                      {draft.workshop.logoHeightPx ?? 34} px
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -232,9 +258,12 @@ export default function SettingsModal({ open, settings, onSave, onClose }: Props
           </section>
         </div>
 
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100">
-          <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium">{L('cancel', 'Abbrechen')}</button>
-          <button onClick={handleSave} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">{L('save', 'Speichern')}</button>
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-100">
+          <p className="text-[11px] text-slate-400">© Dieter Balmer · Balmer Storm Solutions</p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium">{L('cancel', 'Abbrechen')}</button>
+            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">{L('save', 'Speichern')}</button>
+          </div>
         </div>
       </div>
     </div>

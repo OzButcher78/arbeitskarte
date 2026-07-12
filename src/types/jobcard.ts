@@ -25,11 +25,14 @@ export interface JobCardRecord {
   automat?: boolean; // "Automat: o" checkbox
 
   // Kunde (left column) — Halter block also scanned from the Ausweis (S)
+  firma?: string; // company (manual)
   vorname?: string; // (S) Halter Vorname
   name?: string; // (S) Halter Name — searchable
   strasse?: string; // (S) Halter Strasse
   plzOrt?: string; // (S) Halter PLZ / Ort
   telefon?: string; // manual (not on the Ausweis)
+  telefon2?: string; // second phone (manual)
+  kundeNotiz?: string; // free note / remark on the customer (manual)
 
   // Fahrzeug (right column) — scanned fields marked (S)
   fahrzeugmarke?: string; // (S) Marke
@@ -90,6 +93,8 @@ export interface WorkshopIdentity {
   website?: string;
   /** data: URL of the header logo, printed on the card. */
   logoDataUrl?: string;
+  /** Printed logo height in px (letterhead). Falls back to 34 when unset. */
+  logoHeightPx?: number;
 }
 
 export interface AppSettings {

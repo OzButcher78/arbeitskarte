@@ -81,10 +81,13 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   const carMap = carMapSvgString(new Set(r.damagedParts), r.damageStrokes ?? []);
 
   const kunde = [
+    cell('Firma', r.firma),
     cell('Name', [r.vorname, r.name].filter(Boolean).join(' ')),
     cell('Strasse', r.strasse),
     cell('PLZ / Ort', r.plzOrt),
     cell('Telefon', r.telefon),
+    cell('Telefon 2', r.telefon2),
+    cell('Notiz', r.kundeNotiz),
   ].join('');
 
   const fahrzeug = [
@@ -114,17 +117,23 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     workRow('Bemerkungen', r.notes),
   ].join('');
 
-  // Bottom half of page 2: the Fahrzeugausweis + any job photos. When both are
-  // present the ausweis is shrunk (`with-photos`) so the media still fits the
-  // lower half beside the photo grid.
-  const hasPhotos = photoDataUrls.length > 0;
-  const photos = hasPhotos
-    ? `<h3 class="sec">Fotos</h3><div class="photos">${photoDataUrls.map((u) => `<img src="${u}" alt="">`).join('')}</div>`
-    : '';
+  // Bottom half of page 2: the Fahrzeugausweis (photos moved to their own pages).
   const ausweis = ausweisDataUrl
-    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis${hasPhotos ? ' with-photos' : ''}" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
+    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
     : '';
-  const media = ausweis || photos ? `<div class="media-half">${ausweis}${photos}</div>` : '';
+  const media = ausweis ? `<div class="media-half">${ausweis}</div>` : '';
+
+  // Page 3 onward: attached job photos, two per page (large, portrait-stacked).
+  const photoPages: string[] = [];
+  for (let i = 0; i < photoDataUrls.length; i += 2) {
+    const pair = photoDataUrls.slice(i, i + 2);
+    photoPages.push(
+      `<div class="photo-page"><h3 class="sec">Fotos</h3><div class="photo-grid">${pair
+        .map((u) => `<div class="photo-cell"><img src="${u}" alt=""></div>`)
+        .join('')}</div></div>`,
+    );
+  }
+  const photos = photoPages.join('');
 
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><title>Arbeitskarte ${esc(r.jobNumber)}</title>
@@ -134,7 +143,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #0f172a; font-size: 11px; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #0f172a; padding-bottom: 5px; }
   .letterhead .name { font-size: 14px; font-weight: 700; }
-  .letterhead img { max-height: 34px; max-width: 130px; object-fit: contain; }
+  .letterhead img { max-height: 34px; max-width: 240px; object-fit: contain; }
   .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 9px 0 10px; }
   .meta-l .title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
   .meta-l .nr { font-size: 14px; font-weight: 600; color: #2563eb; margin-bottom: 5px; }
@@ -173,15 +182,17 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the fold. */
   .arb-half { min-height: 135mm; }
   .ausweis { max-width: 100%; max-height: 116mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; }
-  .ausweis.with-photos { max-height: 78mm; }
-  .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .photos img { width: 100%; height: 82px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 4px; }
+  /* Page 3+: two attached photos per page, stacked and large. */
+  .photo-page { break-before: page; page-break-before: always; }
+  .photo-grid { display: flex; flex-direction: column; gap: 8mm; }
+  .photo-cell { text-align: center; }
+  .photo-cell img { max-width: 100%; max-height: 118mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; }
 </style></head>
 <body>
   <div class="top-half">
   <div class="letterhead">
     <div class="name">${esc(w.name)}</div>
-    ${w.logoDataUrl ? `<img src="${esc(w.logoDataUrl)}" alt="">` : ''}
+    ${w.logoDataUrl ? `<img src="${esc(w.logoDataUrl)}" alt="" style="max-height:${Number(w.logoHeightPx) || 34}px">` : ''}
   </div>
 
   <div class="meta">
@@ -223,5 +234,6 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     </div>
     ${media}
   </div>
+  ${photos}
 </body></html>`;
 }
