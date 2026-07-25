@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { inputClass, labelClass } from '../ui/form';
 
 interface Props {
   label: string;
@@ -116,18 +117,18 @@ export default function DateField({ label, value, onChange }: Props) {
 
   return (
     <div className="block" ref={wrapRef}>
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className={labelClass}>{label}</span>
       <div className="relative">
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="TT.MM.JJJJ"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 pr-10 text-sm outline-none focus:border-blue-500"
+          className={`${inputClass} pr-10`}
         />
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-control p-1.5 text-faint hover:bg-surface-sunken hover:text-muted"
           title="Kalender"
           aria-label="Kalender öffnen"
           aria-expanded={open}
@@ -136,27 +137,27 @@ export default function DateField({ label, value, onChange }: Props) {
         </button>
 
         {open && (
-          <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+          <div className="absolute left-0 top-full z-[var(--z-popover)] mt-1 w-64 rounded-card border border-line bg-paper p-2 shadow-elev-pop">
             <div className="mb-1 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => shiftMonth(-1)}
-                className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                className="rounded-control p-1 text-muted hover:bg-surface-sunken"
                 aria-label="Voriger Monat"
               >
                 <ChevronLeft size={16} />
               </button>
-              <span className="text-sm font-semibold capitalize text-slate-700">{monthLabel}</span>
+              <span className="text-sm font-semibold capitalize text-ink">{monthLabel}</span>
               <button
                 type="button"
                 onClick={() => shiftMonth(1)}
-                className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                className="rounded-control p-1 text-muted hover:bg-surface-sunken"
                 aria-label="Nächster Monat"
               >
                 <ChevronRight size={16} />
               </button>
             </div>
-            <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-slate-400">
+            <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-faint">
               {WEEKDAYS.map((w) => (
                 <div key={w} className="py-1">{w}</div>
               ))}
@@ -168,10 +169,10 @@ export default function DateField({ label, value, onChange }: Props) {
                 const isSel = selected && sameDay(d, selected);
                 const isToday = sameDay(d, today);
                 const cls = isSel
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-accent text-white'
                   : isToday
-                    ? 'bg-blue-50 text-blue-700 font-semibold'
-                    : 'text-slate-700 hover:bg-slate-100';
+                    ? 'bg-accent-soft text-accent-strong font-semibold'
+                    : 'text-ink hover:bg-surface-sunken';
                 return (
                   <button
                     key={i}
@@ -184,11 +185,11 @@ export default function DateField({ label, value, onChange }: Props) {
                 );
               })}
             </div>
-            <div className="mt-1.5 flex items-center justify-between border-t border-slate-100 pt-1.5">
+            <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
               <button
                 type="button"
                 onClick={() => { onChange(formatCH(new Date())); setOpen(false); }}
-                className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                className="rounded-control px-2 py-1 text-xs font-semibold text-accent hover:bg-accent-soft"
               >
                 Heute
               </button>
@@ -196,7 +197,7 @@ export default function DateField({ label, value, onChange }: Props) {
                 <button
                   type="button"
                   onClick={() => { onChange(''); setOpen(false); }}
-                  className="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100"
+                  className="rounded-control px-2 py-1 text-xs font-semibold text-muted hover:bg-surface-sunken"
                 >
                   Löschen
                 </button>

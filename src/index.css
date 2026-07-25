@@ -1,9 +1,90 @@
 @import "tailwindcss";
+/* NOTE: Inter is imported from main.tsx, NOT with an `@import` here. Tailwind
+   v4's PostCSS plugin inlines CSS @imports itself without rebasing their url()s,
+   so the woff2 paths would resolve against src/ instead of the package — Vite
+   then leaves them "to be resolved at runtime" and the font 404s in the packaged
+   app. Importing the stylesheet from JS keeps Vite's own resolver in charge. */
 
-/* ── Pointer cursor on real clickable elements ────────────────────────────
-   Tailwind v4's preflight reverted <button> to cursor:default. Restore the
-   hand cursor on anything actually clickable. */
+/* ============================================================================
+   DESIGN TOKENS (Tailwind v4 `@theme`)
+   ----------------------------------------------------------------------------
+   The single source of truth for colour, radius, elevation and type. Every
+   control style lives in `src/ui/` and consumes these — no raw palette literals
+   (`bg-blue-600`, `border-slate-300`) in feature code.
+
+   MUST stay after `@import "tailwindcss"` — a preceding `@theme` is a CSS parse
+   error and the tokens vanish silently.
+
+   Naming: Tailwind derives `bg-*`/`text-*`/`border-*`/`ring-*` AND `shadow-*`
+   (coloured shadow) from `--color-*`, so colour and shadow leaf names must not
+   collide — hence `--shadow-elev-*` rather than `--shadow-card`.
+
+   The PRINT stylesheet is deliberately NOT tokenised: `src/print/`
+   JobCardDocument.ts keeps its own black-on-white, system-font rules. Print
+   fidelity and screen polish are different jobs.
+   ========================================================================== */
+@theme {
+  /* Surfaces */
+  --color-surface: oklch(0.985 0.004 255);
+  --color-surface-sunken: oklch(0.965 0.005 255);
+  --color-paper: #ffffff;
+
+  /* Lines — finer and cooler than slate-200/300 */
+  --color-line: oklch(0.921 0.006 255);
+  --color-line-strong: oklch(0.868 0.008 255);
+
+  /* Text */
+  --color-ink: oklch(0.255 0.019 258);
+  --color-muted: oklch(0.552 0.016 258);
+  --color-faint: oklch(0.702 0.012 258);
+
+  /* Accent — a touch deeper and less saturated than blue-600 */
+  --color-accent: oklch(0.532 0.148 262);
+  --color-accent-strong: oklch(0.468 0.155 262);
+  --color-accent-soft: oklch(0.962 0.019 262);
+
+  /* Intent */
+  --color-danger: oklch(0.554 0.192 25);
+  --color-danger-strong: oklch(0.487 0.196 25);
+  --color-danger-soft: oklch(0.966 0.017 25);
+  --color-ok: oklch(0.578 0.132 155);
+  --color-ok-strong: oklch(0.508 0.136 155);
+  --color-ok-soft: oklch(0.963 0.026 155);
+
+  /* Shape */
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+
+  /* Elevation — soft, not a hard 1px box */
+  --shadow-elev-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-elev-raised: 0 2px 4px rgb(15 23 42 / 0.05), 0 4px 12px -4px rgb(15 23 42 / 0.10);
+  --shadow-elev-pop: 0 10px 30px -12px rgb(15 23 42 / 0.25);
+
+  /* Type — overriding --font-sans restyles the whole app (Tailwind wires it to
+     --default-font-family on <html>), so no per-element font classes needed. */
+  --font-sans: 'Inter Variable', system-ui, 'Segoe UI', Arial, sans-serif;
+}
+
+/* Stacking order in ONE place. Previously ad-hoc (z-30 / z-[60] / z-[65] /
+   z-[70] / z-[200]) across five hand-rolled overlays. Consume as
+   `z-[var(--z-modal)]`. */
+:root {
+  --z-sticky: 20;
+  --z-popover: 40;
+  --z-modal: 60;
+  --z-modal-nested: 70;
+  --z-toast: 90;
+}
+
 @layer base {
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  /* ── Pointer cursor on real clickable elements ────────────────────────────
+     Tailwind v4's preflight reverted <button> to cursor:default. Restore the
+     hand cursor on anything actually clickable. */
   button:not(:disabled):not([aria-disabled="true"]),
   [role="button"]:not(:disabled):not([aria-disabled="true"]),
   summary,
@@ -20,6 +101,31 @@
   button, [role="button"], a, select, input, textarea, label, summary {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Minimum hit area for interactive controls. 40px with a mouse; 44px on the
+     shop tablet, where the finger — not the cursor — is the pointing device. */
+  .ui-control {
+    min-height: 2.5rem;
+  }
+  @media (pointer: coarse) {
+    .ui-control {
+      min-height: 2.75rem;
+    }
+  }
+
+  /* Square icon-only buttons follow the same rule in both axes. */
+  .ui-icon-btn {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+  @media (pointer: coarse) {
+    .ui-icon-btn {
+      min-height: 2.75rem;
+      min-width: 2.75rem;
+    }
   }
 }
 

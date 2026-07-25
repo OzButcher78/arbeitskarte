@@ -34,6 +34,7 @@ import CameraCaptureModal from './capture/CameraCaptureModal';
 import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 import DateField from './components/DateField';
+import { Section, Field, TextField, TextAreaField, CheckField, inputClass } from './ui/form';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string; draft?: JobCardRecord };
 
@@ -797,7 +798,7 @@ function EditView({
             <select
               value={record.status}
               onChange={(e) => update({ status: e.target.value as JobStatus })}
-              className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
+              className={inputClass}
             >
               {STATUS_ORDER.map((s) => (
                 <option key={s} value={s}>
@@ -811,7 +812,7 @@ function EditView({
           <TextField record={record} update={update} field="schluesselCode" label={t.schluesselCode} />
           <TextField record={record} update={update} field="ersatzwagenKopf" label={t.ersatzwagenKopf} />
           <TextField record={record} update={update} field="kilometerstand" label={t.kilometerstand} />
-          <CheckField record={record} update={update} field="automat" label={t.automat} />
+          <CheckField record={record} update={update} field="automat" label={t.automat} className="self-end pb-2" />
         </Section>
 
         {/* Kunde / Halter */}
@@ -933,7 +934,7 @@ function EditView({
                 value={record.schadenNotiz ?? ''}
                 onChange={(e) => update({ schadenNotiz: e.target.value })}
                 rows={4}
-                className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
+                className={`${inputClass} resize-y`}
               />
             </Field>
           </div>
@@ -1060,104 +1061,5 @@ function EditView({
         />
       )}
     </div>
-  );
-}
-
-function Section({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-4 ${className ?? ''}`}>
-      <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
-      <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">{children}</div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-/** Text input bound to a string field of the record. */
-function TextField({
-  record,
-  update,
-  field,
-  label,
-  upper,
-}: {
-  record: JobCardRecord;
-  update: (patch: Partial<JobCardRecord>) => void;
-  field: keyof JobCardRecord;
-  label: string;
-  upper?: boolean;
-}) {
-  const value = (record[field] as string | undefined) ?? '';
-  return (
-    <Field label={label}>
-      <input
-        value={value}
-        onChange={(e) =>
-          update({ [field]: upper ? e.target.value.toUpperCase() : e.target.value } as Partial<JobCardRecord>)
-        }
-        className={`w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 ${upper ? 'uppercase' : ''}`}
-      />
-    </Field>
-  );
-}
-
-/** Multiline text bound to a string field of the record. */
-function TextAreaField({
-  record,
-  update,
-  field,
-  label,
-  rows = 2,
-}: {
-  record: JobCardRecord;
-  update: (patch: Partial<JobCardRecord>) => void;
-  field: keyof JobCardRecord;
-  label: string;
-  rows?: number;
-}) {
-  const value = (record[field] as string | undefined) ?? '';
-  return (
-    <Field label={label}>
-      <textarea
-        value={value}
-        rows={rows}
-        onChange={(e) => update({ [field]: e.target.value } as Partial<JobCardRecord>)}
-        className="w-full resize-y rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500"
-      />
-    </Field>
-  );
-}
-
-/** Checkbox bound to a boolean field of the record. */
-function CheckField({
-  record,
-  update,
-  field,
-  label,
-}: {
-  record: JobCardRecord;
-  update: (patch: Partial<JobCardRecord>) => void;
-  field: keyof JobCardRecord;
-  label: string;
-}) {
-  const checked = Boolean(record[field]);
-  return (
-    <label className="flex items-center gap-2 self-end pb-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => update({ [field]: e.target.checked } as Partial<JobCardRecord>)}
-        className="h-4 w-4"
-      />
-      <span className="text-sm text-slate-700">{label}</span>
-    </label>
   );
 }

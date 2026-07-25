@@ -4,6 +4,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LocaleProvider } from './i18n/locale';
 import { primeCapacitorCredentials } from './platform/credentials';
 import { CREDENTIAL_STORE_KEYS } from './platform/credentialStore';
+// Inter Variable, bundled locally (weight axis only) — the app must render
+// correctly in airplane mode, so no CDN font. See the note in index.css for why
+// this import lives here and not in the stylesheet.
+import '@fontsource-variable/inter/wght.css';
 import './index.css';
 import App from './App';
 
