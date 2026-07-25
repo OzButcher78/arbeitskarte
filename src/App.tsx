@@ -35,6 +35,8 @@ import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 import DateField from './components/DateField';
 import { Section, Field, TextField, TextAreaField, CheckField, inputClass } from './ui/form';
+import { useAutosave } from './storage/useAutosave';
+import { useAndroidBackHandler } from './platform/androidBackHandler';
 import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/ConfirmDialog';
 import { Modal } from './ui/Modal';
@@ -672,14 +674,55 @@ function EditView({
    *  scan against on a tablet). */
   const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
+  /** The card as it was when the editor opened — the target of "Änderungen
+   *  verwerfen", which replaces the old Abbrechen button. */
+  const originalRef = useRef<JobCardRecord | null>(null);
+  /** True for a card created in this editor session; "verwerfen" then means
+   *  "throw the whole card away", not "revert the fields". */
+  const isNewRef = useRef(Boolean(draft));
+
+  const autosave = useAutosave(record, saveJobCard, { delay: 700 });
+
+  // Android hardware back inside the editor used to fall through to the platform
+  // default: the app exited and the unsaved draft went with it. Registered via a
+  // ref because the handler needs `record`, which is only known past the loading
+  // guard below — hooks have to run unconditionally.
+  const leaveRef = useRef<() => void>(() => {});
+  useAndroidBackHandler(() => leaveRef.current(), !lightbox && !scanOpen && !photoCamOpen);
+
+  /** The single write path. Every mutation goes through here — setState AND the
+   *  persist, with the value passed explicitly so nothing races the debounce. */
+  const commit = useCallback(
+    async (next: JobCardRecord) => {
+      setRecord(next);
+      await autosave.flush(next);
+    },
+    [autosave],
+  );
 
   useEffect(() => {
     if (draft) {
       setRecord(draft); // new card — start from the in-memory draft, no DB read
+      originalRef.current = draft;
       return;
     }
-    void getJobCard(id).then((r) => setRecord(r ?? null));
+    void getJobCard(id).then((r) => {
+      setRecord(r ?? null);
+      originalRef.current = r ?? null;
+    });
   }, [id, draft]);
+
+  // Fallback mint. The number is normally assigned when the card is opened
+  // (handleNew); this covers the case where that failed, or auto-numbering was
+  // switched on after the draft was created. It used to live in handleSave,
+  // which no longer exists.
+  const minted = useRef(false);
+  useEffect(() => {
+    if (minted.current || !record) return;
+    if (!settings.autoJobNumbers || record.jobNumber.trim()) return;
+    minted.current = true;
+    void mintJobNumber().then((nr) => setRecord((r) => (r && !r.jobNumber.trim() ? { ...r, jobNumber: nr } : r)));
+  }, [record, settings.autoJobNumbers]);
 
   // Load additional photo thumbnails whenever the photo set changes.
   const photoKey = (record?.photoIds ?? []).join(',');
@@ -731,17 +774,75 @@ function EditView({
 
   const update = (patch: Partial<JobCardRecord>) => setRecord((r) => (r ? { ...r, ...patch } : r));
 
-  const handleSave = async () => {
-    // Fallback mint: the number is normally assigned when the card is opened
-    // (handleNew), so this only fires if that failed or auto-numbering was
-    // switched on after the draft was created.
-    let toSave = record;
-    if (settings.autoJobNumbers && !record.jobNumber.trim()) {
-      toSave = { ...record, jobNumber: await mintJobNumber() };
-      setRecord(toSave);
+  /** Everything the user can actually put into a card. Explicitly a positive
+   *  list: jobNumber/status/createdAt are populated before the user types a
+   *  single character, so "is this record empty?" cannot be asked of the whole
+   *  object. */
+  const hasContent = (r: JobCardRecord): boolean => {
+    const texts: (string | undefined)[] = [
+      r.repDatum, r.abholdatum, r.schluesselCode, r.ersatzwagenKopf,
+      r.firma, r.vorname, r.name, r.strasse, r.plzOrt, r.telefon, r.telefon2, r.kundeNotiz,
+      r.fahrzeugmarke, r.fahrzeugtyp, r.kontrollschild, r.vin, r.stammnummer, r.farbe,
+      r.erstzulassung, r.kilometerstand, r.versicherung, r.schadenNr, r.schadenNotiz,
+      r.spenglerarbeit, r.ersatzteileKleinmat, r.lackierarbeit, r.lackmaterial, r.kittsatz,
+      r.nebenarbeiten, r.schneidfaden, r.arbeitenErsatzwagen, r.notes,
+    ];
+    if (texts.some((v) => (v ?? '').trim() !== '')) return true;
+    if (r.automat) return true;
+    if (r.damagedParts.length > 0) return true;
+    if ((r.damageStrokes ?? []).length > 0) return true;
+    if (r.photoIds.length > 0) return true;
+    if (r.ausweisImageId) return true;
+    return false;
+  };
+
+  /** Leave the editor. Empty brand-new cards are removed instead of persisted,
+   *  so a mistaken tap on "Neue Karte" doesn't leave a ghost row in the list.
+   *  cancel() MUST come before the delete: Dexie put is an upsert, so a pending
+   *  debounce would otherwise write the row straight back. */
+  const leaveEditor = async () => {
+    if (isNewRef.current && !hasContent(record)) {
+      autosave.cancel();
+      await deleteJobCard(record.id).catch(() => {});
+      onDone();
+      return;
     }
-    await saveJobCard(toSave);
+    await autosave.flush();
     onDone();
+  };
+  leaveRef.current = () => { void leaveEditor(); };
+
+  /** Replaces the old Abbrechen. Reverts the text fields to the state the card
+   *  was in when the editor opened. Photos and the Ausweis image are NOT
+   *  reverted — they were already written the moment they were added, exactly
+   *  as under the old Abbrechen button. */
+  const handleDiscard = async () => {
+    const original = originalRef.current;
+    if (isNewRef.current) {
+      const ok = await confirm({
+        title: t.discardCardTitle,
+        message: t.discardCardBody,
+        confirmLabel: t.discardConfirm,
+        confirmVariant: 'danger',
+      });
+      if (!ok) return;
+      autosave.cancel();
+      await deleteJobCard(record.id).catch(() => {});
+      onDone();
+      return;
+    }
+    if (!original) return;
+    const ok = await confirm({
+      title: t.discardTitle,
+      message: t.discardEditsBody,
+      confirmLabel: t.discardConfirm,
+      cancelLabel: t.keepEditing,
+      confirmVariant: 'danger',
+    });
+    if (!ok) return;
+    autosave.cancel();
+    await commit(original);
+    toast.success(t.discardDone);
   };
 
   const handleScanClick = () => {
@@ -775,8 +876,9 @@ function EditView({
     } catch (err) {
       console.warn('[scan] Ausweisbild konnte nicht gespeichert werden:', err);
     }
-    setRecord(next);
-    await saveJobCard(next); // persist scanned fields + Ausweis link immediately
+    // One write path: commit() sets state AND persists the same value, so a
+    // debounce armed from the pre-scan record can't clobber ausweisImageId.
+    await commit(next);
     toast.success(t.toastScanApplied);
   };
 
@@ -810,9 +912,7 @@ function EditView({
       }
     }
     if (newIds.length) {
-      const next = { ...record, photoIds: [...record.photoIds, ...newIds] };
-      setRecord(next);
-      await saveJobCard(next);
+      await commit({ ...record, photoIds: [...record.photoIds, ...newIds] });
     }
   };
 
@@ -825,15 +925,13 @@ function EditView({
     });
     if (!ok) return;
     await deleteBlob(photoId).catch(() => {});
-    const next = { ...record, photoIds: record.photoIds.filter((p) => p !== photoId) };
-    setRecord(next);
-    await saveJobCard(next);
+    await commit({ ...record, photoIds: record.photoIds.filter((p) => p !== photoId) });
   };
 
   const handlePrint = async () => {
     try {
-      // Persist first so the printed card reflects the latest edits.
-      await saveJobCard(record);
+      // Flush first so the printed card reflects the latest keystroke.
+      await autosave.flush();
       const html = await renderCardHtml(record, settings.workshop);
       const nr = record.jobNumber || record.id.slice(0, 6);
       await printJobCard(html, `Arbeitskarte-${nr}.pdf`);
@@ -870,26 +968,29 @@ function EditView({
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="mb-4 flex items-center justify-between">
-        <button
-          onClick={onDone}
-          className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800"
-        >
-          <ChevronLeft size={16} /> {t.back}
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleScanClick}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            <ScanLine size={16} /> {t.scanAusweis}
-          </button>
-          <button
-            onClick={() => void handlePrint()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Printer size={16} /> {t.printCard}
-          </button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <Button variant="ghost" onClick={() => void leaveEditor()} icon={<ChevronLeft size={16} />}>
+          {t.back}
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Replaces the Speichern button: the card is already saved, so the
+              only thing left to communicate is whether that has happened yet. */}
+          <span aria-live="polite" className="px-1 text-xs font-medium text-muted">
+            {autosave.status === 'saving' || autosave.status === 'pending'
+              ? t.autosaveSaving
+              : autosave.status === 'error'
+                ? t.autosaveFailed
+                : t.saved}
+          </span>
+          <Button variant="ghost" onClick={() => void handleDiscard()}>
+            {isNewRef.current ? t.discardCard : t.discardEdits}
+          </Button>
+          <Button variant="primary" onClick={handleScanClick} icon={<ScanLine size={16} />}>
+            {t.scanAusweis}
+          </Button>
+          <Button variant="secondary" onClick={() => void handlePrint()} icon={<Printer size={16} />}>
+            {t.printCard}
+          </Button>
         </div>
       </div>
 
@@ -1146,19 +1247,12 @@ function EditView({
         </div>
       </div>
 
-      <div className="mt-6 flex justify-end gap-2">
-        <button
-          onClick={onDone}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          {t.cancel}
-        </button>
-        <button
-          onClick={handleSave}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          {t.save}
-        </button>
+      {/* No Speichern/Abbrechen row: the card autosaves, and leaving is the
+          back arrow at the top. */}
+      <div className="mt-6 flex justify-end">
+        <Button variant="primary" onClick={() => void leaveEditor()}>
+          {t.done}
+        </Button>
       </div>
 
       <DocumentScanModal

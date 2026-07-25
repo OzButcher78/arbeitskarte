@@ -63,7 +63,16 @@ export const de: Translations = {
   save: 'Speichern',
   cancel: 'Abbrechen',
   back: 'Zurück',
-  saved: 'Gespeichert.',
+  done: 'Fertig',
+  saved: 'Gespeichert',
+  autosaveSaving: 'Speichert …',
+  autosaveFailed: 'Nicht gespeichert!',
+  discardEdits: 'Änderungen verwerfen',
+  discardEditsBody: 'Alle Text-Eingaben werden auf den Stand beim Öffnen der Karte zurückgesetzt. Fotos und das Ausweisbild bleiben erhalten.',
+  discardCard: 'Karte verwerfen',
+  discardCardTitle: 'Neue Karte verwerfen?',
+  discardCardBody: 'Die Karte wird verworfen und nicht in die Liste aufgenommen.',
+  discardDone: 'Änderungen verworfen.',
 
   // Test print (Phase 0)
   testPrint: 'Test-Druck (PDF)',
