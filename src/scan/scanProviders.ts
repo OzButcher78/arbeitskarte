@@ -124,15 +124,24 @@ export const SCAN_FIELD_KEYS: ReadonlyArray<keyof ScanFields> = [
 ];
 
 // Vision model names kept in ONE place (provider-drift mitigation).
+// EVERY entry here MUST be vision-capable — a text-only model rejects the
+// image part and the scan fails with an opaque HTTP 400. Providers retire
+// model ids, so this table rots: `AppSettings.docScanModel` lets the shop
+// override any of these without waiting for a release.
 export const SCAN_MODELS: Record<ScanProvider, string> = {
   openai: 'gpt-4o',
-  anthropic: 'claude-3-5-sonnet-latest',
+  anthropic: 'claude-sonnet-5',
   infomaniak: 'mistralai/Ministral-3-14B-Instruct-2512',
   mistral: 'mistral-small-latest',
 };
 
 const ANTHROPIC_VERSION = '2023-06-01';
 const MAX_TOKENS = 800;
+
+/** The model this request runs on: the user's override, else the default. */
+function resolveModel(provider: ScanProvider, model?: string): string {
+  return (model || '').trim() || SCAN_MODELS[provider];
+}
 
 export interface ScanRequest {
   url: string;
@@ -221,8 +230,10 @@ export function buildScanRequest(
   country?: string,
   accountId?: string,
   scanKind: ScanKind = 'fahrzeugausweis',
+  model?: string,
 ): ScanRequest {
   const b64 = bareBase64(imageBase64);
+  const modelId = resolveModel(provider, model);
   const mime = mimeType || 'image/jpeg';
   const isVin = scanKind === 'vin';
   const promptText = isVin ? VIN_PROMPT : PROMPT;
@@ -240,9 +251,13 @@ export function buildScanRequest(
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: {
-        model: SCAN_MODELS.anthropic,
+        model: modelId,
         max_tokens: MAX_TOKENS,
-        temperature: 0,
+        // No `temperature`: current Claude models reject sampling parameters
+        // with HTTP 400. And thinking is ON by default there, while max_tokens
+        // caps thinking + answer together — leaving it on would eat the 800
+        // tokens and truncate the JSON envelope mid-object.
+        thinking: { type: 'disabled' },
         system: promptText,
         messages: [
           {
@@ -264,7 +279,7 @@ export function buildScanRequest(
       ? { type: 'image_url', image_url: dataUrl }
       : { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } };
   const body: Record<string, unknown> = {
-    model: SCAN_MODELS[provider],
+    model: modelId,
     max_tokens: MAX_TOKENS,
     temperature: 0,
     messages: [

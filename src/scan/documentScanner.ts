@@ -53,6 +53,8 @@ export interface ScanInput {
   country?: string;
   accountId?: string;
   scanKind?: ScanKind;
+  /** Optional model-id override (Settings). Empty → the provider default. */
+  model?: string;
 }
 
 /** Map canonical ScanFields onto the job-card ScanResult (vehicle + Halter).
@@ -110,7 +112,7 @@ function vinForDisplay(raw: string | null): string | null {
 }
 
 export async function scanDocument(input: ScanInput): Promise<ScanResult> {
-  const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind = 'fahrzeugausweis' } = input;
+  const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind = 'fahrzeugausweis', model } = input;
   if (!imageBase64) throw makeScanError('transport', 'missing image');
 
   // ── Local (offline) OCR path — no key, no network, no PII off-device ────────
@@ -138,7 +140,7 @@ export async function scanDocument(input: ScanInput): Promise<ScanResult> {
     res = await bridgeFetch('/api/scan-document', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, apiKey, imageBase64, mimeType, country, accountId, scanKind }),
+      body: JSON.stringify({ provider, apiKey, imageBase64, mimeType, country, accountId, scanKind, model }),
     });
   } catch (e) {
     throw makeScanError('transport', e instanceof Error ? e.message : String(e));
@@ -155,12 +157,18 @@ export async function scanDocument(input: ScanInput): Promise<ScanResult> {
     throw makeScanError('parse', 'non-json response');
   }
 
-  const errObj = (raw as { error?: unknown })?.error;
+  const body = raw as { error?: unknown; message?: unknown; details?: unknown };
+  const errObj = body?.error;
   if (!res.ok || errObj) {
-    const msg =
+    const head =
       errObj && typeof errObj === 'object'
         ? String((errObj as { message?: unknown }).message || '')
         : String(errObj || '');
+    // The transports wrap their own failure detail in `details` (Electron IPC)
+    // or `message` (Android CapacitorHttp) next to a generic `error`. Keep both
+    // halves — the detail is what tells "no network" apart from "no credit".
+    const tail = String(body?.details || body?.message || '');
+    const msg = [head, tail && tail !== head ? tail : ''].filter(Boolean).join(' — ');
     const looksAuth =
       res.status === 401 ||
       res.status === 403 ||

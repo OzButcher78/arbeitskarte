@@ -1045,6 +1045,7 @@ function EditView({
         provider={settings.docScanProvider}
         apiKey={getDocScanKey()}
         accountId={settings.docScanProviderAccountId}
+        model={settings.docScanModel}
         cloudReady={isScanReady(settings)}
         country="CH"
         onApply={(fields, original) => void handleScanApply(fields, original)}

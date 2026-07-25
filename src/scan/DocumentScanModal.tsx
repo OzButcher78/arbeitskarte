@@ -25,6 +25,7 @@ import { type ScanProvider, type ScanKind } from './scanProviders';
 import { compressImage } from '../capture/compressImage';
 import { dataUrlToBlob } from '../utils/dataUrl';
 import { isCompanionAvailable } from '../platform/companion';
+import { isBrowser } from '../platform/detect';
 
 interface DocumentScanModalProps {
   open: boolean;
@@ -35,6 +36,8 @@ interface DocumentScanModalProps {
   apiKey: string;
   /** Infomaniak Produkt-ID (non-secret), templated into its endpoint URL. */
   accountId?: string;
+  /** Optional model-id override from Settings. Empty → the provider default. */
+  model?: string;
   /** True when the cloud (KI) path is fully configured (key + ack + account).
    *  When false, only the offline OCR engine is available. */
   cloudReady: boolean;
@@ -63,7 +66,7 @@ async function encodeFullImage(dataUrl: string): Promise<{ base64: string; mimeT
 }
 
 const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
-  open, mode = 'fahrzeugausweis', provider, apiKey, accountId, cloudReady, country = 'CH',
+  open, mode = 'fahrzeugausweis', provider, apiKey, accountId, model, cloudReady, country = 'CH',
   onApply, onClose,
 }) => {
   const { t } = useLocale();
@@ -71,14 +74,26 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
   const isVin = mode === 'vin';
   // Offline OCR is Fahrzeugausweis-only for now; the VIN plate read stays cloud.
   const canUseLocal = !isVin;
+  // The cloud call needs a native transport (Electron IPC / CapacitorHttp) to get
+  // past CORS — in a plain browser it can only ever answer HTTP 501. Say so up
+  // front instead of letting the user hit an error screen.
+  const cloudSupported = !isBrowser();
+  const cloudUsable = cloudReady && cloudSupported;
+  const cloudBlockedNote = !cloudSupported
+    ? L('scanEngineOnlineBrowser', 'Online-Scan nur in der Desktop- oder Tablet-App — hier bitte Offline verwenden.')
+    : L('scanEngineOnlineUnavailable', 'Online-KI zuerst in den Einstellungen einrichten.');
 
   const [phase, setPhase] = useState<Phase>('capture');
   const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
   const [originalImageUrl, setOriginalImageUrl] = useState<string>('');
   const [errorCode, setErrorCode] = useState<'auth' | 'error' | 'nothing'>('error');
+  /** The provider's/transport's own words, kept alongside the coarse bucket so
+   *  "no network", "rate limit", "no credit" and "not supported here" stay
+   *  distinguishable instead of collapsing into "Scan fehlgeschlagen". */
+  const [errorDetail, setErrorDetail] = useState<string>('');
   const [fields, setFields] = useState<ScanResult>(emptyScanResult());
-  // Default to the cloud when it's configured (more accurate); otherwise offline.
-  const [engine, setEngine] = useState<ScanEngine>(cloudReady && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
+  // Default to the cloud when it's usable (more accurate); otherwise offline.
+  const [engine, setEngine] = useState<ScanEngine>(cloudUsable && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,9 +103,10 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     setCaptureSource(null);
     setOriginalImageUrl('');
     setErrorCode('error');
+    setErrorDetail('');
     setFields(emptyScanResult());
-    setEngine(cloudReady && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
-  }, [open, cloudReady, canUseLocal]);
+    setEngine(cloudUsable && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
+  }, [open, cloudUsable, canUseLocal]);
 
   // Warm the on-device engine (loads the wasm/lang) as soon as offline is chosen,
   // so the first scan isn't stuck waiting on the ~14 MB payload. Dynamic-imported
@@ -99,16 +115,21 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     if (open && engine === 'local') void import('./localOcr/engine').then((m) => m.warmUpLocalOcr());
   }, [open, engine]);
 
-  const runScan = useCallback(async (dataUrl: string) => {
+  /** `engineOverride` lets the error screen retry the SAME image on the other
+   *  engine without going back to the capture step. */
+  const runScan = useCallback(async (dataUrl: string, engineOverride?: ScanEngine) => {
+    const chosen = engineOverride ?? engine;
+    if (engineOverride) setEngine(engineOverride);
     setOriginalImageUrl(dataUrl);
     setPhase('processing');
-    const useLocal = engine === 'local' && canUseLocal;
+    setErrorDetail('');
+    const useLocal = chosen === 'local' && canUseLocal;
     try {
       const { base64, mimeType } = await encodeFullImage(dataUrl);
       const res = await scanDocument({
         provider: useLocal ? 'local' : provider,
         apiKey: useLocal ? '' : apiKey,
-        accountId, imageBase64: base64, mimeType, country, scanKind: mode,
+        accountId, model, imageBase64: base64, mimeType, country, scanKind: mode,
       });
       if (isEmptyScanResult(res)) {
         setErrorCode('nothing');
@@ -120,9 +141,10 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     } catch (e) {
       const code = (e as { code?: ScanErrorCode })?.code;
       setErrorCode(code === 'auth' ? 'auth' : 'error');
+      setErrorDetail(e instanceof Error ? e.message : String(e ?? ''));
       setPhase('error');
     }
-  }, [provider, apiKey, accountId, country, mode, engine, canUseLocal]);
+  }, [provider, apiKey, accountId, model, country, mode, engine, canUseLocal]);
 
   const handleFilePicked = (file: File | undefined) => {
     if (!file) return;
@@ -240,10 +262,10 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => cloudReady && setEngine('cloud')}
-                      disabled={!cloudReady}
-                      title={cloudReady ? undefined : L('scanEngineOnlineUnavailable', 'Online-KI zuerst in den Einstellungen einrichten.')}
-                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'cloud' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'} ${!cloudReady ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      onClick={() => cloudUsable && setEngine('cloud')}
+                      disabled={!cloudUsable}
+                      title={cloudUsable ? undefined : cloudBlockedNote}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'cloud' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'} ${!cloudUsable ? 'opacity-40 cursor-not-allowed' : ''}`}
                     >
                       <Cloud size={15} /> {L('scanEngineOnline', 'Online (KI)')}
                     </button>
@@ -251,10 +273,13 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                   <p className="text-[11px] text-slate-500 mt-1.5">
                     {engine === 'local'
                       ? L('scanEngineOfflineDesc', 'Texterkennung läuft vollständig auf diesem Gerät – es verlassen keine Daten den Computer.')
-                      : cloudReady
+                      : cloudUsable
                         ? L('scanEngineOnlineDesc', 'Genauer – das Bild wird zur Erkennung an den in den Einstellungen gewählten Anbieter gesendet.')
-                        : L('scanEngineOnlineUnavailable', 'Online-KI zuerst in den Einstellungen einrichten.')}
+                        : cloudBlockedNote}
                   </p>
+                  {!cloudSupported && (
+                    <p className="text-[11px] text-amber-600 mt-1">{cloudBlockedNote}</p>
+                  )}
                 </div>
               )}
               <p className="text-sm text-slate-600">
@@ -333,22 +358,41 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
             <div className="space-y-4">
               <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200">
                 <AlertTriangle size={18} className="text-red-600 mt-0.5" />
-                <div className="text-sm text-red-700">
-                  {errorCode === 'auth'
-                    ? L('scanAuthError', 'Der API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.')
-                    : errorCode === 'nothing'
-                      ? (isVin
-                          ? L('scanVinNothingFound', 'Es konnte keine gültige VIN (17 Zeichen) erkannt werden. Bitte näher und schärfer fotografieren.')
-                          : L('scanNothingFound', 'Es konnten keine Daten erkannt werden. Bitte näher / schärfer fotografieren.'))
-                      : L('scanError', 'Der Scan ist fehlgeschlagen. Bitte erneut versuchen.')}
+                <div className="min-w-0">
+                  <div className="text-sm text-red-700">
+                    {errorCode === 'auth'
+                      ? L('scanAuthError', 'Der API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.')
+                      : errorCode === 'nothing'
+                        ? (isVin
+                            ? L('scanVinNothingFound', 'Es konnte keine gültige VIN (17 Zeichen) erkannt werden. Bitte näher und schärfer fotografieren.')
+                            : L('scanNothingFound', 'Es konnten keine Daten erkannt werden. Bitte näher / schärfer fotografieren.'))
+                        : L('scanError', 'Der Scan ist fehlgeschlagen. Bitte erneut versuchen.')}
+                  </div>
+                  {errorDetail && (
+                    <div className="mt-1.5 text-[11px] text-slate-500 break-words">{errorDetail}</div>
+                  )}
                 </div>
               </div>
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                {canUseLocal && engine === 'cloud' && originalImageUrl && (
+                  <button
+                    onClick={() => void runScan(originalImageUrl, 'local')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <Cpu size={15} /> {L('scanRetryOffline', 'Mit Offline-Erkennung versuchen')}
+                  </button>
+                )}
                 <button
-                  onClick={() => setPhase('capture')}
+                  onClick={() => (originalImageUrl ? void runScan(originalImageUrl) : setPhase('capture'))}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   {L('retry', 'Erneut versuchen')}
+                </button>
+                <button
+                  onClick={() => setPhase('capture')}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium"
+                >
+                  {L('scanNewPhoto', 'Neues Foto')}
                 </button>
               </div>
             </div>

@@ -58,6 +58,7 @@ async function androidScanDocument(init?: RequestInit): Promise<Response> {
     country?: string;
     accountId?: string;
     scanKind?: ScanKind;
+    model?: string;
   }>(init);
 
   const provider = coerceScanProvider(payload.provider);
@@ -72,7 +73,10 @@ async function androidScanDocument(init?: RequestInit): Promise<Response> {
 
   try {
     const { CapacitorHttp } = await import('@capacitor/core');
-    const req = buildScanRequest(provider, apiKey, imageBase64, mimeType, payload.country, payload.accountId, scanKind);
+    const req = buildScanRequest(
+      provider, apiKey, imageBase64, mimeType,
+      payload.country, payload.accountId, scanKind, payload.model,
+    );
     const res = await CapacitorHttp.request({
       method: 'POST',
       url: req.url,

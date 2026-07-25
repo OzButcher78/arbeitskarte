@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X, Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2 } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import type { AppSettings, ScanProviderId } from '../types/jobcard';
-import { SCAN_PROVIDER_META } from '../scan/scanProviders';
+import { SCAN_PROVIDER_META, SCAN_MODELS } from '../scan/scanProviders';
 import { getDocScanKey, setDocScanKey } from '../platform/credentialStore';
 import { formatJobNumber } from '../numbering/jobNumber';
 import { runBackup, LAST_BACKUP_KEY } from '../backup/runBackup';
@@ -370,6 +370,20 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
                   </button>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-400">{L('scanKeyStored', 'Der Schlüssel wird verschlüsselt auf diesem Gerät gespeichert.')}</p>
+              </div>
+              <div>
+                <label className={labelCls}>{L('scanModel', 'Modell (optional)')}</label>
+                <input
+                  className={inputCls}
+                  value={draft.docScanModel ?? ''}
+                  onChange={(e) => update({ docScanModel: e.target.value.trim() })}
+                  placeholder={SCAN_MODELS[draft.docScanProvider]}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {L('scanModelHint', 'Leer lassen für das Standardmodell. Nur ändern, wenn der Anbieter das Modell abgeschaltet hat – es muss Bilder lesen können (Vision).')}
+                </p>
               </div>
               <label className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
                 <input type="checkbox" checked={draft.docScanComplianceAck} onChange={(e) => update({ docScanComplianceAck: e.target.checked })} className="w-5 h-5 mt-0.5" />

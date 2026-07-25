@@ -14,7 +14,7 @@ import { buildScanRequest, coerceScanProvider, type ScanKind } from '../../src/s
 import { jsonResult, type IpcResult } from './types';
 
 export async function scanDocumentIpc(args: any): Promise<IpcResult> {
-  const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind } = args || {};
+  const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind, model } = args || {};
 
   const prov = coerceScanProvider(provider);
   const kind: ScanKind = scanKind === 'vin' ? 'vin' : 'fahrzeugausweis';
@@ -37,6 +37,7 @@ export async function scanDocumentIpc(args: any): Promise<IpcResult> {
       country,
       typeof accountId === 'string' ? accountId : undefined,
       kind,
+      typeof model === 'string' ? model : undefined,
     );
     const res = await fetch(req.url, {
       method: 'POST',

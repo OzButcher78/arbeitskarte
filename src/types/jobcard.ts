@@ -110,6 +110,11 @@ export interface AppSettings {
   docScanProvider: ScanProviderId;
   /** Infomaniak Produkt-ID (non-secret). The key lives in the credential store. */
   docScanProviderAccountId?: string;
+  /** Optional model-id override. Providers retire model ids without notice and
+   *  a dead id fails the scan with an opaque error; this lets the shop point at
+   *  a current vision model without waiting for a release. Empty → the built-in
+   *  default from SCAN_MODELS. */
+  docScanModel?: string;
   docScanComplianceAck: boolean;
   /** Vestigial: owner-block redaction. The scanner now always sends the whole
    *  image (no crop/redaction step); kept only so old stores keep merging. */
@@ -138,6 +143,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   docScanEnabled: false,
   docScanProvider: 'infomaniak',
   docScanProviderAccountId: '',
+  docScanModel: '',
   docScanComplianceAck: false,
   docScanRedactOwner: false,
   backupEnabled: false,
