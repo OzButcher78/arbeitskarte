@@ -117,7 +117,6 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     cell('Kilometerstand', r.kilometerstand),
     cell('Versicherung', r.versicherung),
     cell('Schaden-Nr.', r.schadenNr),
-    cell('Ersatzteile', r.ersatzteileJa ? (r.ersatzteileText || 'Ja') : ''),
   ].join('');
 
   // Back-of-card work/material lines — always shown with a writing line.

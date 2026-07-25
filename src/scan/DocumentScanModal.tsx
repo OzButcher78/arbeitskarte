@@ -31,8 +31,9 @@ import { isBrowser } from '../platform/detect';
 
 interface DocumentScanModalProps {
   open: boolean;
-  /** 'fahrzeugausweis' (default) = full registration document; 'vin' = a VIN
-   *  plate on a car part (no holder block, make + approx. year decoded offline). */
+  /** Initial scan kind: 'fahrzeugausweis' (default) = full registration
+   *  document; 'vin' = a VIN plate on a car part (no holder block, make +
+   *  approx. year decoded offline). The user can switch in the capture step. */
   mode?: ScanKind;
   provider: ScanProvider;
   apiKey: string;
@@ -73,7 +74,12 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
 }) => {
   const { t } = useLocale();
   const L = useCallback((key: string, fallback: string): string => (t as any)?.[key] || fallback, [t]);
-  const isVin = mode === 'vin';
+  // The VIN path (prompt, offline decoder, confirm form, strings) was fully
+  // implemented but unreachable — nothing ever passed `mode`. Rather than adding
+  // another button to the editor toolbar, the choice lives in the capture step
+  // of this dialog, where it is a property of the scan being taken.
+  const [kind, setKind] = useState<ScanKind>(mode);
+  const isVin = kind === 'vin';
   // Offline OCR is Fahrzeugausweis-only for now; the VIN plate read stays cloud.
   const canUseLocal = !isVin;
   // The cloud call needs a native transport (Electron IPC / CapacitorHttp) to get
@@ -101,6 +107,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
 
   useEffect(() => {
     if (!open) return;
+    setKind(mode);
     setPhase('capture');
     setCaptureSource(null);
     setOriginalImageUrl('');
@@ -108,7 +115,15 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     setErrorDetail('');
     setFields(emptyScanResult());
     setEngine(cloudUsable && canUseLocal ? 'cloud' : canUseLocal ? 'local' : 'cloud');
-  }, [open, cloudUsable, canUseLocal]);
+  }, [open, mode, cloudUsable, canUseLocal]);
+
+  // Switching to VIN takes the offline engine off the table (Tesseract can't do
+  // the plate read), so the engine has to follow — otherwise `useLocal` silently
+  // resolves to false and the scan runs on the cloud while the UI still says
+  // offline.
+  useEffect(() => {
+    if (isVin && engine === 'local') setEngine('cloud');
+  }, [isVin, engine]);
 
   // Warm the on-device engine (loads the wasm/lang) as soon as offline is chosen,
   // so the first scan isn't stuck waiting on the ~14 MB payload. Dynamic-imported
@@ -131,7 +146,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
       const res = await scanDocument({
         provider: useLocal ? 'local' : provider,
         apiKey: useLocal ? '' : apiKey,
-        accountId, model, imageBase64: base64, mimeType, country, scanKind: mode,
+        accountId, model, imageBase64: base64, mimeType, country, scanKind: kind,
       });
       if (isEmptyScanResult(res)) {
         setErrorCode('nothing');
@@ -146,7 +161,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
       setErrorDetail(e instanceof Error ? e.message : String(e ?? ''));
       setPhase('error');
     }
-  }, [provider, apiKey, accountId, model, country, mode, engine, canUseLocal]);
+  }, [provider, apiKey, accountId, model, country, kind, engine, canUseLocal]);
 
   const handleFilePicked = (file: File | undefined) => {
     if (!file) return;
@@ -247,6 +262,33 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
           {/* ── Capture step ────────────────────────────────────────────── */}
           {phase === 'capture' && (
             <div className="space-y-3">
+              {/* What is being scanned. Separate from the engine switch below:
+                  this picks the extraction contract, that picks where it runs. */}
+              <div className="flex gap-1 rounded-control bg-surface-sunken p-1">
+                <button
+                  type="button"
+                  onClick={() => setKind('fahrzeugausweis')}
+                  aria-pressed={!isVin}
+                  className={`flex-1 rounded-control px-3 py-1.5 text-sm font-semibold transition-colors ${!isVin ? 'bg-paper text-accent-strong shadow-sm' : 'text-muted hover:text-ink'}`}
+                >
+                  {L('scanKindAusweis', 'Fahrzeugausweis')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKind('vin')}
+                  aria-pressed={isVin}
+                  className={`flex-1 rounded-control px-3 py-1.5 text-sm font-semibold transition-colors ${isVin ? 'bg-paper text-accent-strong shadow-sm' : 'text-muted hover:text-ink'}`}
+                >
+                  {L('scanKindVin', 'Fahrgestell-Nr.')}
+                </button>
+              </div>
+              {isVin && (
+                <p className="text-[11px] text-muted">
+                  {cloudUsable
+                    ? L('scanVinOnlineOnly', 'Der VIN-Scan läuft nur über die Online-KI – die Offline-Erkennung kann ihn nicht lesen.')
+                    : cloudBlockedNote}
+                </p>
+              )}
               {canUseLocal && (
                 <div>
                   <div className="flex gap-1 p-1 rounded-lg bg-surface-sunken">

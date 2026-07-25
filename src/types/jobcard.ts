@@ -45,9 +45,6 @@ export interface JobCardRecord {
   kilometerstand?: string;
   versicherung?: string; // (S) insurer name
   schadenNr?: string;
-  ersatzteileJa?: boolean; // "Ersatzteile: ja o"
-  ersatzteileText?: string; // the line next to it
-  freieZeilen?: string[]; // the 2 blank lines beneath
 
   // Schaden (car map)
   damagedParts: string[]; // selected data-panel keys of FlatCarMap2.svg (legacy ids tolerated)

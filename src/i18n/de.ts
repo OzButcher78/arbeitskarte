@@ -141,8 +141,6 @@ export const de: Translations = {
   automat: 'Automat',
   kilometerstand: 'Kilometerstand',
   schadenNr: 'Schaden-Nr.',
-  ersatzteileJa: 'Ersatzteile',
-  ersatzteileText: 'Ersatzteile (Bemerkung)',
 
   // Arbeiten / Material (back of card)
   sectionArbeiten: 'Arbeiten / Material',
@@ -258,6 +256,9 @@ export const de: Translations = {
   // Scan dialog — same story.
   scanModalTitle: 'Fahrzeugausweis scannen',
   scanVinModalTitle: 'VIN scannen',
+  scanKindAusweis: 'Fahrzeugausweis',
+  scanKindVin: 'Fahrgestell-Nr.',
+  scanVinOnlineOnly: 'Der VIN-Scan läuft nur über die Online-KI – die Offline-Erkennung kann ihn nicht lesen.',
   scanOwnerDataNote: 'Fahrzeug- und Halterdaten werden erkannt. Das Bild wird an den gewählten Anbieter gesendet.',
   scanVinNote: 'Es werden die Fahrgestellnummer und – falls sichtbar – das Kennzeichen erfasst.',
   scanEngineOffline: 'Offline (OCR)',
