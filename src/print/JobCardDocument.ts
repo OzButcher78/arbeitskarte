@@ -66,6 +66,22 @@ function slot(label: string, value: unknown): string {
   return `<div class="slot"><span class="k">${esc(label)}</span><span class="v">${v ? esc(v) : ''}</span></div>`;
 }
 
+/** Running header for pages 2+. Loose sheets end up spread over a workbench, so
+ *  every page after the first has to identify itself; page 1 already carries the
+ *  number in its letterhead block and is left untouched. */
+function pageHead(r: JobCardRecord, page: number, total: number): string {
+  const kunde = String(r.firma || '').trim() || [r.vorname, r.name].filter(Boolean).join(' ').trim();
+  const left = [
+    r.jobNumber ? `Arbeitskarte Nr. ${r.jobNumber}` : 'Arbeitskarte',
+    kunde,
+    String(r.kontrollschild || '').trim(),
+  ]
+    .filter(Boolean)
+    .map(esc)
+    .join(' · ');
+  return `<div class="pagehead"><span>${left}</span><span>Seite ${page} / ${total}</span></div>`;
+}
+
 /** A free-text Arbeiten row. Always rendered — an empty value leaves a blank
  *  writing line so the card can still be filled in by hand. */
 function workRow(label: string, value: unknown): string {
@@ -124,11 +140,15 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   const media = ausweis ? `<div class="media-half">${ausweis}</div>` : '';
 
   // Page 3 onward: attached job photos, two per page (large, portrait-stacked).
+  // Page 2 always exists, so the total is known up front — no CSS counter needed.
+  const photoPageCount = Math.ceil(photoDataUrls.length / 2);
+  const totalPages = 2 + photoPageCount;
+
   const photoPages: string[] = [];
   for (let i = 0; i < photoDataUrls.length; i += 2) {
     const pair = photoDataUrls.slice(i, i + 2);
     photoPages.push(
-      `<div class="photo-page"><h3 class="sec">Fotos</h3><div class="photo-grid">${pair
+      `<div class="photo-page">${pageHead(r, 3 + i / 2, totalPages)}<h3 class="sec">Fotos</h3><div class="photo-grid">${pair
         .map((u) => `<div class="photo-cell"><img src="${u}" alt=""></div>`)
         .join('')}</div></div>`,
     );
@@ -185,8 +205,15 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   table.arb td .wl { display: block; height: 36px; }
   h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; border-bottom: 1px solid #666; padding-bottom: 3px; }
   .page2 { break-before: page; page-break-before: always; }
-  /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the fold. */
-  .arb-half { min-height: 135mm; }
+  /* Running header on pages 2+ so a loose sheet can still be traced back to its
+     card. Reserves ~8.5mm, which is taken off .arb-half below. */
+  .pagehead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 11px; color: #444; border-bottom: 1px solid #999; padding-bottom: 3px; margin-bottom: 4mm; }
+  /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the
+     fold. Reduced from 135mm by the height of .pagehead so the Ausweis stays on
+     page 2 instead of spilling onto a third sheet. */
+  .arb-half { min-height: 126mm; }
+  /* Keep the Ausweis heading with its image. */
+  .media-half { break-inside: avoid; page-break-inside: avoid; }
   /* Fill the whole bottom half of page 2 with the scanned Ausweis. */
   .ausweis { width: 100%; max-width: 100%; max-height: 126mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 0; }
   /* Page 3+: two attached photos per page, stacked and large. */
@@ -235,6 +262,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   </div>
 
   <div class="page2">
+    ${pageHead(r, 2, totalPages)}
     <div class="arb-half">
       <h3 class="sec">Arbeiten / Material</h3>
       <table class="arb">${arbeiten}</table>
