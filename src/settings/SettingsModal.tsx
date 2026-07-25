@@ -74,6 +74,12 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
     setBackupMsg(null);
   }, [open, settings]);
 
+  // Bail out while closed. Modal would render nothing anyway, but everything
+  // below — including the isDirty comparison and its credential-store read —
+  // would otherwise run on EVERY App render, e.g. on each keystroke in the
+  // list's search box.
+  if (!open) return null;
+
   const meta = SCAN_PROVIDER_META[draft.docScanProvider];
   const update = (patch: Partial<AppSettings>) => setDraft((d) => ({ ...d, ...patch }));
   const updateShop = (patch: Partial<AppSettings['workshop']>) =>
