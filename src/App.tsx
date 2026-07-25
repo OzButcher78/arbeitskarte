@@ -35,6 +35,10 @@ import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 import DateField from './components/DateField';
 import { Section, Field, TextField, TextAreaField, CheckField, inputClass } from './ui/form';
+import { useToast } from './ui/Toast';
+import { useConfirm } from './ui/ConfirmDialog';
+import { Modal } from './ui/Modal';
+import { Button } from './ui/Button';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string; draft?: JobCardRecord };
 
@@ -50,6 +54,13 @@ const CHIP_CLASSES: Record<PanelCategory, string> = {
   'light-indicator': 'bg-orange-100 text-orange-700 hover:bg-orange-200',
   'light-front': 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
 };
+
+/** One-line identity of a card for dialogs and toasts — number, plate, customer.
+ *  Anything the shop would use to recognise it on the bench. */
+function describeCard(c: JobCardRecord): string {
+  const who = String(c.firma || '').trim() || [c.vorname, c.name].filter(Boolean).join(' ').trim();
+  return [c.jobNumber ? `Nr. ${c.jobNumber}` : '', c.kontrollschild, who].filter(Boolean).join(' · ');
+}
 
 function formatDate(ts: number): string {
   try {
@@ -86,6 +97,8 @@ function isScanReady(settings: AppSettings): boolean {
 
 export default function App() {
   const { t } = useLocale();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const [view, setView] = useState<View>({ kind: 'list' });
   const [cards, setCards] = useState<JobCardRecord[]>([]);
   const [query, setQuery] = useState('');
@@ -149,11 +162,26 @@ export default function App() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!window.confirm(t.confirmDelete)) return;
+      // Name the card being deleted. The old prompt ("Diese Arbeitskarte
+      // wirklich löschen?") gave no way to tell whether the right row was hit.
+      const card = cards.find((c) => c.id === id);
+      const ok = await confirm({
+        title: t.confirmDeleteTitle,
+        message: (
+          <>
+            <p className="font-semibold text-ink">{card ? describeCard(card) : ''}</p>
+            <p className="mt-2 text-muted">{t.confirmDeleteBody}</p>
+          </>
+        ),
+        confirmLabel: t.delete,
+        confirmVariant: 'danger',
+      });
+      if (!ok) return;
       await deleteJobCard(id);
       await reload();
+      toast.success(t.cardDeleted);
     },
-    [reload, t.confirmDelete],
+    [cards, confirm, reload, toast, t],
   );
 
   const handleStatusChange = useCallback(async (id: string, status: JobStatus) => {
@@ -180,9 +208,9 @@ export default function App() {
       const nr = card.jobNumber || card.id.slice(0, 6);
       setPreview({ html, filename: `Arbeitskarte-${nr}.pdf` });
     } catch (err) {
-      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [t.printFailed]);
+  }, [t.printFailed, toast]);
 
   // Printer icon — render to PDF bytes and open the native print preview.
   const handlePrintPreview = useCallback(async (id: string) => {
@@ -194,9 +222,9 @@ export default function App() {
       const nr = card.jobNumber || card.id.slice(0, 6);
       await previewJobCard(html, `Arbeitskarte-${nr}.pdf`);
     } catch (err) {
-      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [t.printFailed]);
+  }, [t.printFailed, toast]);
 
   return (
     // paddingBottom clears the Android navigation bar (edge-to-edge WebView on
@@ -576,12 +604,17 @@ function EditView({
   onDone: () => void;
 }) {
   const { t } = useLocale();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const [record, setRecord] = useState<JobCardRecord | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [photoCamOpen, setPhotoCamOpen] = useState(false);
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
   const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
   const [mapMode, setMapMode] = useState<'select' | 'draw'>('select');
+  /** Which image the lightbox is showing (thumbnails are too small to check a
+   *  scan against on a tablet). */
+  const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -660,7 +693,9 @@ function EditView({
     // is switched on; the cloud (KI) path stays gated by isScanReady inside.
     if (settings.docScanEnabled) setScanOpen(true);
     else {
-      window.alert(t.scanConfigureFirst);
+      // Take the user straight where the problem is, and say why on the way —
+      // an alert they have to dismiss first only adds a tap.
+      toast.show(t.scanConfigureFirst);
       onOpenSettings();
     }
   };
@@ -686,6 +721,7 @@ function EditView({
     }
     setRecord(next);
     await saveJobCard(next); // persist scanned fields + Ausweis link immediately
+    toast.success(t.toastScanApplied);
   };
 
   const remainingPhotoSlots = Math.max(0, MAX_PHOTOS_PER_JOB - record.photoIds.length);
@@ -725,6 +761,13 @@ function EditView({
   };
 
   const removePhoto = async (photoId: string) => {
+    const ok = await confirm({
+      title: t.photoDeleteTitle,
+      message: t.photoDeleteBody,
+      confirmLabel: t.delete,
+      confirmVariant: 'danger',
+    });
+    if (!ok) return;
     await deleteBlob(photoId).catch(() => {});
     const next = { ...record, photoIds: record.photoIds.filter((p) => p !== photoId) };
     setRecord(next);
@@ -738,8 +781,9 @@ function EditView({
       const html = await renderCardHtml(record, settings.workshop);
       const nr = record.jobNumber || record.id.slice(0, 6);
       await printJobCard(html, `Arbeitskarte-${nr}.pdf`);
+      toast.success(t.toastPrinted);
     } catch (err) {
-      window.alert(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${t.printFailed}: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -758,8 +802,14 @@ function EditView({
     setRecord((r) => (r ? { ...r, damageStrokes: [...(r.damageStrokes ?? []), stroke] } : r));
   const undoStroke = () =>
     setRecord((r) => (r ? { ...r, damageStrokes: (r.damageStrokes ?? []).slice(0, -1) } : r));
-  const clearStrokes = () => {
-    if (window.confirm(t.carmapClearConfirm)) update({ damageStrokes: [] });
+  const clearStrokes = async () => {
+    const ok = await confirm({
+      title: t.carmapClear,
+      message: t.carmapClearConfirm,
+      confirmLabel: t.delete,
+      confirmVariant: 'danger',
+    });
+    if (ok) update({ damageStrokes: [] });
   };
 
   return (
@@ -996,14 +1046,21 @@ function EditView({
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {photoThumbs.map((p) => (
                 <div key={p.id} className="relative">
-                  <img src={p.url} alt="" className="h-24 w-full rounded-lg border border-slate-200 object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setLightbox({ url: p.url, title: t.sectionFotos })}
+                    className="block w-full"
+                    aria-label={t.photoOpen}
+                  >
+                    <img src={p.url} alt="" className="h-24 w-full rounded-control border border-line object-cover" />
+                  </button>
                   <button
                     onClick={() => void removePhoto(p.id)}
-                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-400"
+                    className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-danger text-white shadow-elev-card hover:bg-danger-strong"
                     title={t.delete}
                     aria-label={t.delete}
                   >
-                    <X size={11} />
+                    <X size={12} />
                   </button>
                 </div>
               ))}
@@ -1015,11 +1072,18 @@ function EditView({
         {ausweisUrl && (
           <Section title={t.ausweisFoto}>
             <div className="sm:col-span-2">
-              <img
-                src={ausweisUrl}
-                alt={t.ausweisFoto}
-                className="max-h-56 w-full rounded-lg border border-slate-200 object-contain"
-              />
+              <button
+                type="button"
+                onClick={() => setLightbox({ url: ausweisUrl, title: t.ausweisFoto })}
+                className="block w-full"
+                aria-label={t.photoOpen}
+              >
+                <img
+                  src={ausweisUrl}
+                  alt={t.ausweisFoto}
+                  className="max-h-56 w-full rounded-control border border-line object-contain"
+                />
+              </button>
             </div>
           </Section>
         )}
@@ -1060,6 +1124,18 @@ function EditView({
           onCancel={() => setPhotoCamOpen(false)}
         />
       )}
+
+      {/* Lightbox — a 96px thumbnail is not enough to check a scan against. */}
+      <Modal
+        open={lightbox !== null}
+        onClose={() => setLightbox(null)}
+        title={lightbox?.title}
+        size="max-w-4xl"
+      >
+        {lightbox && (
+          <img src={lightbox.url} alt={lightbox.title} className="mx-auto max-h-[75vh] w-auto object-contain" />
+        )}
+      </Modal>
     </div>
   );
 }

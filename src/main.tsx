@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LocaleProvider } from './i18n/locale';
+import { ToastProvider } from './ui/Toast';
+import { ConfirmProvider } from './ui/ConfirmDialog';
 import { primeCapacitorCredentials } from './platform/credentials';
 import { CREDENTIAL_STORE_KEYS } from './platform/credentialStore';
 // Inter Variable, bundled locally (weight axis only) — the app must render
@@ -19,7 +21,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <LocaleProvider>
-        <App />
+        <ToastProvider>
+          <ConfirmProvider>
+            <App />
+          </ConfirmProvider>
+        </ToastProvider>
       </LocaleProvider>
     </ErrorBoundary>
   </StrictMode>,

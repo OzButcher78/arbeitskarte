@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2 } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import type { AppSettings, ScanProviderId } from '../types/jobcard';
 import { SCAN_PROVIDER_META, SCAN_MODELS } from '../scan/scanProviders';
@@ -16,6 +16,11 @@ import { parseBackup, restoreBackup, hasVersionMismatch } from '../backup/restor
 import { setMeta } from '../storage/jobCardRepository';
 import { db } from '../storage/db';
 import { isElectron, isAndroid } from '../platform/detect';
+import { Modal } from '../ui/Modal';
+import { Button } from '../ui/Button';
+import { useConfirm } from '../ui/ConfirmDialog';
+import { useToast } from '../ui/Toast';
+import { inputClass, labelClass } from '../ui/form';
 
 interface Props {
   open: boolean;
@@ -49,6 +54,8 @@ function readFileAsDataUrl(file: File): Promise<string> {
 export default function SettingsModal({ open, settings, onSave, onClose, onDataRestored }: Props) {
   const { t } = useLocale();
   const L = (key: string, fallback: string): string => (t as any)?.[key] || fallback;
+  const { confirm, choose } = useConfirm();
+  const toast = useToast();
 
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [apiKey, setApiKey] = useState('');
@@ -66,8 +73,6 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
     setBusy(null);
     setBackupMsg(null);
   }, [open, settings]);
-
-  if (!open) return null;
 
   const meta = SCAN_PROVIDER_META[draft.docScanProvider];
   const update = (patch: Partial<AppSettings>) => setDraft((d) => ({ ...d, ...patch }));
@@ -118,30 +123,53 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
         setBackupMsg({ ok: false, text: L('restoreInvalid', 'Ungültige Sicherungsdatei.') });
         return;
       }
-      if (hasVersionMismatch(env)) {
-        const proceedVer = window.confirm(
-          `Diese Sicherung stammt aus einer anderen Datenbankversion (${env.dbVersion} statt ${db.verno}). ` +
-          `Es kann zu Problemen kommen. Trotzdem wiederherstellen?`,
-        );
-        if (!proceedVer) return;
-      }
-      const proceed = window.confirm(
-        `Sicherung vom ${new Date(env.exportedAt).toLocaleString('de-CH')} wiederherstellen?\n` +
-        `${env.counts.jobcards} Karten, ${env.counts.blobs} Bilder.`,
-      );
-      if (!proceed) return;
-      const replace = window.confirm(
-        'Modus wählen:\n\n[OK] = Alle aktuellen Karten ersetzen\n[Abbrechen] = Zusammenführen (aktuelle Karten behalten)',
-      );
-      if (replace && !window.confirm('Wirklich ALLE aktuellen Karten und Bilder ersetzen? Kann nicht rückgängig gemacht werden.')) {
-        return;
-      }
+      // ONE dialog with named buttons. This used to be up to four chained
+      // window.confirm prompts in which "Abbrechen" on the third silently meant
+      // "Zusammenführen" — a destructive three-way choice encoded as OK/Cancel.
+      const mode = await choose<'replace' | 'merge'>({
+        title: L('restoreTitle', 'Sicherung wiederherstellen'),
+        message: (
+          <div className="space-y-3">
+            <p>
+              {L('restoreBody', 'Wie soll die Sicherung eingespielt werden?')}{' '}
+              <span className="text-muted">
+                ({new Date(env.exportedAt).toLocaleString('de-CH')} · {env.counts.jobcards} Karten,{' '}
+                {env.counts.blobs} Bilder)
+              </span>
+            </p>
+            {hasVersionMismatch(env) && (
+              <p className="rounded-control bg-danger-soft px-3 py-2 text-danger-strong">
+                {L('restoreVersionWarn', 'Diese Sicherung stammt aus einer anderen Programmversion. Das Einspielen kann fehlschlagen.')}{' '}
+                ({env.dbVersion} statt {db.verno})
+              </p>
+            )}
+            <ul className="space-y-1.5 text-muted">
+              <li>
+                <strong className="text-ink">{L('restoreReplace', 'Alle ersetzen')}:</strong>{' '}
+                {L('restoreReplaceHint', 'Alle aktuellen Arbeitskarten und Bilder werden gelöscht und durch die Sicherung ersetzt.')}
+              </li>
+              <li>
+                <strong className="text-ink">{L('restoreMerge', 'Zusammenführen')}:</strong>{' '}
+                {L('restoreMergeHint', 'Karten aus der Sicherung werden zu den bestehenden hinzugefügt.')}
+              </li>
+            </ul>
+          </div>
+        ),
+        choices: [
+          { value: 'merge', label: L('restoreMerge', 'Zusammenführen'), variant: 'primary' },
+          { value: 'replace', label: L('restoreReplace', 'Alle ersetzen'), variant: 'danger' },
+        ],
+        nested: true,
+      });
+      if (!mode) return;
+
       setBusy('restore');
       setBackupMsg(null);
       try {
-        const res = await restoreBackup(env, replace ? 'replace' : 'merge');
+        const res = await restoreBackup(env, mode);
         if (res.ok) {
           setBackupMsg({ ok: true, text: `${res.jobcards} Karten und ${res.blobs} Bilder wiederhergestellt.` });
+          toast.success(L('restoreDone', 'Sicherung eingespielt.'));
           onDataRestored?.();
         } else {
           setBackupMsg({ ok: false, text: res.error || L('restoreFailed', 'Wiederherstellung fehlgeschlagen.') });
@@ -151,6 +179,26 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
       }
     };
     reader.readAsText(file);
+  };
+
+  /** Settings only persist on Speichern, so backdrop / ✕ / Escape used to throw
+   *  away edits without a word. */
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(settings) || apiKey.trim() !== getDocScanKey().trim();
+
+  const handleRequestClose = () => {
+    if (!isDirty) return true;
+    void (async () => {
+      const discard = await confirm({
+        title: L('discardTitle', 'Änderungen verwerfen?'),
+        message: L('discardBody', 'Die geänderten Einstellungen wurden noch nicht gespeichert.'),
+        confirmLabel: L('discardConfirm', 'Verwerfen'),
+        cancelLabel: L('keepEditing', 'Weiter bearbeiten'),
+        confirmVariant: 'danger',
+        nested: true,
+      });
+      if (discard) onClose();
+    })();
+    return false;
   };
 
   const handleSave = () => {
@@ -164,29 +212,33 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
     onClose();
   };
 
-  const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1';
-  const inputCls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500';
+  // Shared field chrome (src/ui/form) — Settings used to define its own, which
+  // is how the app ended up with three different input styles.
+  const labelCls = labelClass;
+  const inputCls = inputClass;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] px-4"
-      // Pad the overlay by the system-bar insets so the centred dialog — and its
-      // Speichern/Abbrechen footer — never hide behind the Android status/nav bar.
-      style={{
-        paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
-        paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <Modal
+      open={open}
+      onClose={onClose}
+      onRequestClose={handleRequestClose}
+      title={L('settingsTitle', 'Einstellungen')}
+      size="max-w-2xl"
+      footer={
+        <>
+          <p className="text-[11px] text-faint">© Dieter Balmer · Balmer Storm Solutions</p>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => { if (handleRequestClose() !== false) onClose(); }}>
+              {L('cancel', 'Abbrechen')}
+            </Button>
+            <Button variant="primary" onClick={handleSave}>
+              {L('save', 'Speichern')}
+            </Button>
+          </div>
+        </>
+      }
     >
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-full flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
-          <h3 className="text-base font-semibold text-slate-800">{L('settingsTitle', 'Einstellungen')}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" title={L('close', 'Schliessen')}>
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-5 overflow-y-auto space-y-6">
+      <div className="space-y-6">
           {/* Betrieb */}
           <section>
             <h4 className="mb-3 text-sm font-bold text-slate-700">{L('secBetrieb', 'Betrieb')}</h4>
@@ -486,16 +538,7 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
               />
             </div>
           </section>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-100">
-          <p className="text-[11px] text-slate-400">© Dieter Balmer · Balmer Storm Solutions</p>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium">{L('cancel', 'Abbrechen')}</button>
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors">{L('save', 'Speichern')}</button>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

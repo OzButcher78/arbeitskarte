@@ -16,7 +16,9 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Camera, FolderOpen, Loader2, ScanLine, AlertTriangle, Check, Smartphone, Cpu, Cloud } from 'lucide-react';
+import { Camera, FolderOpen, Loader2, ScanLine, AlertTriangle, Check, Smartphone, Cpu, Cloud } from 'lucide-react';
+import { Modal } from '../ui/Modal';
+import { Button } from '../ui/Button';
 import { useLocale } from '../i18n/locale';
 import CameraCaptureModal from '../capture/CameraCaptureModal';
 import PhotoCompanionPanel from './PhotoCompanionPanel';
@@ -202,61 +204,56 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
 
   const fieldRow = (key: ScanTextField, label: string, upper?: boolean) => (
     <div>
-      <label className="block text-xs font-medium text-slate-600 mb-0.5">{label}</label>
+      <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted mb-1">{label}</label>
       <input
         type="text"
         value={fields[key] || ''}
         onChange={(e) => setField(key, upper ? e.target.value.toUpperCase() : e.target.value)}
-        className={`w-full px-2 py-1 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${upper ? 'uppercase' : ''}`}
+        className={`w-full rounded-control border border-line-strong bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 ${upper ? 'uppercase' : ''}`}
       />
     </div>
   );
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4"
-      // Inset by the system-bar heights so the dialog + its footer stay clear of
-      // the Android status/nav bar (edge-to-edge WebView).
-      style={{
-        paddingTop: 'calc(0.75rem + env(safe-area-inset-top))',
-        paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-full flex flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center">
-              <ScanLine size={18} className="text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-slate-800">
-                {isVin ? L('scanVinModalTitle', 'VIN scannen') : L('scanModalTitle', 'Fahrzeugausweis scannen')}
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {isVin
-                  ? L('scanVinNote', 'Es werden die Fahrgestellnummer und – falls sichtbar – das Kennzeichen erfasst.')
-                  : L('scanOwnerDataNote', 'Fahrzeug- und Halterdaten werden erkannt. Das Bild wird an den gewählten Anbieter gesendet.')}
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" title={L('close', 'Schliessen')}>
-            <X size={20} />
-          </button>
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="max-w-xl"
+      title={isVin ? L('scanVinModalTitle', 'VIN scannen') : L('scanModalTitle', 'Fahrzeugausweis scannen')}
+      subtitle={
+        isVin
+          ? L('scanVinNote', 'Es werden die Fahrgestellnummer und – falls sichtbar – das Kennzeichen erfasst.')
+          : L('scanOwnerDataNote', 'Fahrzeug- und Halterdaten werden erkannt. Das Bild wird an den gewählten Anbieter gesendet.')
+      }
+      leading={
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft">
+          <ScanLine size={18} className="text-accent" />
         </div>
-
-        <div className="p-5 overflow-y-auto">
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {L('cancel', 'Abbrechen')}
+          </Button>
+          {phase === 'confirm' && (
+            <Button variant="primary" onClick={handleApply} icon={<Check size={15} />}>
+              {L('scanApply', 'Übernehmen')}
+            </Button>
+          )}
+        </>
+      }
+    >
+        <div>
           {/* ── Capture step ────────────────────────────────────────────── */}
           {phase === 'capture' && (
             <div className="space-y-3">
               {canUseLocal && (
                 <div>
-                  <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+                  <div className="flex gap-1 p-1 rounded-lg bg-surface-sunken">
                     <button
                       type="button"
                       onClick={() => setEngine('local')}
-                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'local' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'}`}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'local' ? 'bg-white shadow-sm text-accent-strong' : 'text-muted hover:text-ink'}`}
                     >
                       <Cpu size={15} /> {L('scanEngineOffline', 'Offline (OCR)')}
                     </button>
@@ -265,12 +262,12 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                       onClick={() => cloudUsable && setEngine('cloud')}
                       disabled={!cloudUsable}
                       title={cloudUsable ? undefined : cloudBlockedNote}
-                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'cloud' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500 hover:text-slate-700'} ${!cloudUsable ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${engine === 'cloud' ? 'bg-white shadow-sm text-accent-strong' : 'text-muted hover:text-ink'} ${!cloudUsable ? 'opacity-40 cursor-not-allowed' : ''}`}
                     >
                       <Cloud size={15} /> {L('scanEngineOnline', 'Online (KI)')}
                     </button>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1.5">
+                  <p className="text-[11px] text-muted mt-1.5">
                     {engine === 'local'
                       ? L('scanEngineOfflineDesc', 'Texterkennung läuft vollständig auf diesem Gerät – es verlassen keine Daten den Computer.')
                       : cloudUsable
@@ -282,7 +279,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                   )}
                 </div>
               )}
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-ink">
                 {isVin
                   ? L('scanVinCapturePrompt', 'Fahrgestellnummer (VIN) fotografieren – Windschutzscheibe, Türholm oder Armaturenbrett.')
                   : engine === 'local'
@@ -292,25 +289,25 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
               <div className="grid grid-cols-1 gap-2">
                 <button
                   onClick={() => setCaptureSource('camera')}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-line hover:border-accent hover:bg-accent-soft transition-colors text-left"
                 >
-                  <Camera size={18} className="text-blue-600" />
-                  <span className="text-sm font-medium text-slate-700">{L('scanCapture', 'Kamera')}</span>
+                  <Camera size={18} className="text-accent" />
+                  <span className="text-sm font-medium text-ink">{L('scanCapture', 'Kamera')}</span>
                 </button>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-line hover:border-accent hover:bg-accent-soft transition-colors text-left"
                 >
-                  <FolderOpen size={18} className="text-blue-600" />
-                  <span className="text-sm font-medium text-slate-700">{L('scanUpload', 'Aus Ordner / Datei')}</span>
+                  <FolderOpen size={18} className="text-accent" />
+                  <span className="text-sm font-medium text-ink">{L('scanUpload', 'Aus Ordner / Datei')}</span>
                 </button>
                 {isCompanionAvailable() && (
                   <button
                     onClick={() => setCaptureSource('companion')}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+                    className="flex items-center gap-3 p-3 rounded-lg border border-line hover:border-accent hover:bg-accent-soft transition-colors text-left"
                   >
-                    <Smartphone size={18} className="text-blue-600" />
-                    <span className="text-sm font-medium text-slate-700">{L('scanCompanion', 'QR vom Handy')}</span>
+                    <Smartphone size={18} className="text-accent" />
+                    <span className="text-sm font-medium text-ink">{L('scanCompanion', 'QR vom Handy')}</span>
                   </button>
                 )}
               </div>
@@ -324,8 +321,8 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                 className="hidden"
                 onChange={(e) => { handleFilePicked(e.target.files?.[0]); e.target.value = ''; }}
               />
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-500">
-                <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-slate-400" />
+              <div className="flex items-start gap-2 rounded-control border border-line bg-surface-sunken p-3 text-[11px] text-muted">
+                <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-faint" />
                 <span>{isVin
                   ? L('scanVinNote', 'Es werden die Fahrgestellnummer und – falls sichtbar – das Kennzeichen erfasst.')
                   : engine === 'local'
@@ -334,7 +331,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
               </div>
               <button
                 onClick={onClose}
-                className="block w-full text-center text-xs text-slate-500 hover:text-slate-700 underline mt-1"
+                className="block w-full text-center text-xs text-muted hover:text-ink underline mt-1"
               >
                 {L('scanManualEntry', 'Lieber manuell eingeben (ohne Scan)')}
               </button>
@@ -343,8 +340,8 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
 
           {/* ── Processing ──────────────────────────────────────────────── */}
           {phase === 'processing' && (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-              <Loader2 size={28} className="animate-spin mb-3 text-blue-500" />
+            <div className="flex flex-col items-center justify-center py-12 text-muted">
+              <Loader2 size={28} className="animate-spin mb-3 text-accent" />
               <span className="text-sm">
                 {engine === 'local'
                   ? L('scanLocalProcessing', 'Texterkennung läuft auf diesem Gerät … (kann einige Sekunden dauern)')
@@ -356,10 +353,10 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
           {/* ── Error ───────────────────────────────────────────────────── */}
           {phase === 'error' && (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200">
-                <AlertTriangle size={18} className="text-red-600 mt-0.5" />
+              <div className="flex items-start gap-3 p-4 rounded-lg bg-danger-soft border border-danger/30">
+                <AlertTriangle size={18} className="text-danger mt-0.5" />
                 <div className="min-w-0">
-                  <div className="text-sm text-red-700">
+                  <div className="text-sm text-danger-strong">
                     {errorCode === 'auth'
                       ? L('scanAuthError', 'Der API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.')
                       : errorCode === 'nothing'
@@ -369,7 +366,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                         : L('scanError', 'Der Scan ist fehlgeschlagen. Bitte erneut versuchen.')}
                   </div>
                   {errorDetail && (
-                    <div className="mt-1.5 text-[11px] text-slate-500 break-words">{errorDetail}</div>
+                    <div className="mt-1.5 text-[11px] text-muted break-words">{errorDetail}</div>
                   )}
                 </div>
               </div>
@@ -377,20 +374,20 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                 {canUseLocal && engine === 'cloud' && originalImageUrl && (
                   <button
                     onClick={() => void runScan(originalImageUrl, 'local')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium rounded-lg transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 border border-line-strong text-ink hover:bg-surface text-sm font-medium rounded-control transition-colors"
                   >
                     <Cpu size={15} /> {L('scanRetryOffline', 'Mit Offline-Erkennung versuchen')}
                   </button>
                 )}
                 <button
                   onClick={() => (originalImageUrl ? void runScan(originalImageUrl) : setPhase('capture'))}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="ui-control px-4 py-2 bg-accent hover:bg-accent-strong text-white text-sm font-semibold rounded-control transition-colors"
                 >
                   {L('retry', 'Erneut versuchen')}
                 </button>
                 <button
                   onClick={() => setPhase('capture')}
-                  className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium"
+                  className="px-4 py-2 text-muted hover:text-ink text-sm font-medium"
                 >
                   {L('scanNewPhoto', 'Neues Foto')}
                 </button>
@@ -402,7 +399,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
           {phase === 'confirm' && (
             <div className="space-y-3">
               {lowConfidence && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-900">
                   <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                   <span>{L('scanConfidenceLow', 'Bitte die erkannten Werte sorgfältig prüfen – einige Felder sind möglicherweise unvollständig.')}</span>
                 </div>
@@ -412,7 +409,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                   {fieldRow('chassisNr', L('chassisNr', 'Fahrgestellnummer'), true)}
                   <div>
                     {fieldRow('make', L('make', 'Marke'))}
-                    <p className="text-[10px] text-slate-400 mt-0.5">{L('scanVinDecodedMakeHint', 'Marke aus der VIN abgeleitet – bitte prüfen.')}</p>
+                    <p className="text-[10px] text-faint mt-0.5">{L('scanVinDecodedMakeHint', 'Marke aus der VIN abgeleitet – bitte prüfen.')}</p>
                   </div>
                   <div>
                     {fieldRow('erstzulassung', L('erstzulassung', 'Erstzulassung'))}
@@ -422,7 +419,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                 </div>
               ) : (
                 <>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{L('sectionVehicle', 'Fahrzeug')}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">{L('sectionVehicle', 'Fahrzeug')}</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {fieldRow('make', L('make', 'Marke'))}
                     {fieldRow('model', L('model', 'Modell'))}
@@ -433,7 +430,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                     {fieldRow('erstzulassung', L('erstzulassung', 'Erstzulassung'))}
                     {fieldRow('insurance', L('insurance', 'Versicherung'))}
                   </div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 pt-1">{L('sectionOwner', 'Halter')}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-faint pt-1">{L('sectionOwner', 'Halter')}</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {fieldRow('halterName', L('halterName', 'Name'))}
                     {fieldRow('halterVorname', L('halterVorname', 'Vorname'))}
@@ -446,24 +443,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="flex justify-between items-center px-5 py-3 border-t border-slate-100">
-          <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:text-slate-800 text-sm font-medium">
-            {L('cancel', 'Abbrechen')}
-          </button>
-          {phase === 'confirm' && (
-            <button
-              onClick={handleApply}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors"
-            >
-              <Check size={15} />
-              {L('scanApply', 'Übernehmen')}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
