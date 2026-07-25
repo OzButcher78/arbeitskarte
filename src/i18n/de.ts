@@ -12,13 +12,10 @@ export type Translations = Record<string, string>;
 export const de: Translations = {
   // Shell
   appTitle: 'Arbeitskarte',
-  version: 'Version',
   footerCredit: '© 2026 – Dieter Balmer · Balmer Storm Solutions',
 
   // List
-  jobList: 'Arbeitskarten',
   newCard: 'Neue Karte',
-  noCards: 'Noch keine Arbeitskarten erfasst.',
   search: 'Suchen (Nr, Kennzeichen, VIN, Name)…',
   colNumber: 'Nr.',
   colName: 'Name',
@@ -30,7 +27,6 @@ export const de: Translations = {
   delete: 'Löschen',
   preview: 'Vorschau',
   printPreview: 'Druckvorschau',
-  confirmDelete: 'Diese Arbeitskarte wirklich löschen?',
   confirmDeleteTitle: 'Arbeitskarte löschen',
   confirmDeleteBody: 'Die Karte wird mit allen Fotos und dem Ausweisbild endgültig gelöscht. Das lässt sich nicht rückgängig machen.',
   cardDeleted: 'Arbeitskarte gelöscht.',
@@ -43,11 +39,6 @@ export const de: Translations = {
   countOfTotal: 'von',
   filterStatus: 'Status',
   filterAll: 'Alle',
-  sortBy: 'Sortieren',
-  sortByNr: 'Nr.',
-  sortByDate: 'Datum',
-  sortDirAsc: 'Aufsteigend',
-  sortDirDesc: 'Absteigend',
 
   // Status labels
   status_offen: 'Offen',
@@ -55,11 +46,8 @@ export const de: Translations = {
   status_erledigt: 'Erledigt',
   status_archiviert: 'Archiviert',
 
-  // Editor (Phase 0 stub — expands in Phase 3)
-  editCard: 'Arbeitskarte',
+  // Editor
   jobNumber: 'Auftrags-Nr.',
-  fieldName: 'Name',
-  fieldPlate: 'Kennzeichen',
   save: 'Speichern',
   cancel: 'Abbrechen',
   back: 'Zurück',
@@ -74,9 +62,7 @@ export const de: Translations = {
   discardCardBody: 'Die Karte wird verworfen und nicht in die Liste aufgenommen.',
   discardDone: 'Änderungen verworfen.',
 
-  // Test print (Phase 0)
-  testPrint: 'Test-Druck (PDF)',
-  testPrintOnlyDesktop: 'PDF-Druck ist nur in der Desktop-App verfügbar.',
+  // Print
   printFailed: 'Druck fehlgeschlagen',
 
   // Editor sections + fields (Phase 1)
@@ -102,8 +88,6 @@ export const de: Translations = {
   carmapModeSelect: 'Teile wählen',
   carmapModeDraw: 'Zeichnen',
   carmapUndo: 'Rückgängig',
-  carmapClear: 'Alles löschen',
-  carmapClearConfirm: 'Alle Zeichnungen wirklich löschen?',
   carmapReset: 'Zurücksetzen',
   carmapResetConfirm: 'Alle Markierungen und Zeichnungen auf der Schaden-Karte werden entfernt.',
   carmapZoomIn: 'Vergrössern',
