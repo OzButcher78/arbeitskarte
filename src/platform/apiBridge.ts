@@ -11,7 +11,13 @@
 // ============================================================================
 
 import { isAndroid, isElectron } from './detect';
-import { buildScanRequest, coerceScanProvider, type ScanProvider, type ScanKind } from '../scan/scanProviders';
+import {
+  buildScanRequest,
+  buildModelsRequest,
+  coerceScanProvider,
+  type ScanProvider,
+  type ScanKind,
+} from '../scan/scanProviders';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -32,7 +38,51 @@ export async function bridgeFetch(url: string, init?: RequestInit): Promise<Resp
     if (isElectron()) return electronScanDocument(init);
     return jsonResponse(501, { error: 'Der Scanner ist nur in der Desktop- oder Android-App verfügbar.' });
   }
+  if (url === '/api/scan-models') {
+    if (isAndroid()) return androidListModels(init);
+    if (isElectron()) return electronListModels(init);
+    return jsonResponse(501, { error: 'Die Modell-Liste ist nur in der Desktop- oder Android-App verfügbar.' });
+  }
   return fetch(url, init);
+}
+
+async function electronListModels(init?: RequestInit): Promise<Response> {
+  const api = window.electronAPI;
+  if (!api?.listScanModels) {
+    return jsonResponse(501, { error: 'Scanner-Bridge nicht verfügbar.' });
+  }
+  const result = await api.listScanModels(parseInit(init));
+  const body = result.body instanceof Uint8Array ? '{}' : JSON.stringify(result.body ?? {});
+  return new Response(body, {
+    status: result.status,
+    headers: result.headers || { 'Content-Type': 'application/json' },
+  });
+}
+
+async function androidListModels(init?: RequestInit): Promise<Response> {
+  const payload = parseInit<{ provider?: ScanProvider; apiKey?: string; accountId?: string }>(init);
+  const provider = coerceScanProvider(payload.provider);
+  const apiKey = payload.apiKey || '';
+  if (!apiKey) return jsonResponse(400, { error: 'Missing apiKey' });
+
+  try {
+    const { CapacitorHttp } = await import('@capacitor/core');
+    const req = buildModelsRequest(provider, apiKey, payload.accountId);
+    const res = await CapacitorHttp.request({
+      method: 'GET',
+      url: req.url,
+      headers: req.headers,
+      connectTimeout: 15000,
+      readTimeout: 30000,
+    });
+    const bodyText = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? {});
+    return new Response(bodyText, { status: res.status, headers: { 'Content-Type': 'application/json' } });
+  } catch (err: unknown) {
+    // NEVER log the key — only the failure class.
+    console.error('[apiBridge:android] scan-models transport failed');
+    const message = err instanceof Error ? err.message : String(err);
+    return jsonResponse(502, { error: 'model list transport failed', message });
+  }
 }
 
 async function electronScanDocument(init?: RequestInit): Promise<Response> {

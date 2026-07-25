@@ -18,7 +18,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'Arbeitskarte'));
 
 import { printPdfIpc } from './ipc/print';
 import { printToPdfIpc } from './ipc/printPdf';
-import { scanDocumentIpc } from './ipc/scan';
+import { scanDocumentIpc, listScanModelsIpc } from './ipc/scan';
 import { companionStartIpc, companionPollIpc, companionStopIpc } from './ipc/companion';
 import {
   pickDirectoryIpc,
@@ -81,6 +81,7 @@ function registerIpcHandlers(): void {
   // Vehicle Document Scanner — direct-to-provider vision call from the main
   // process (image + BYO key never touch third-party infra).
   ipcMain.handle('scan:document', (_event, args) => scanDocumentIpc(args));
+  ipcMain.handle('scan:models', (_event, args) => listScanModelsIpc(args));
 
   // LAN photo companion — pair a phone via QR to shoot a photo into the app.
   ipcMain.handle('companion:start', () => companionStartIpc());

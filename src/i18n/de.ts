@@ -233,6 +233,8 @@ export const de: Translations = {
   scanApiKey: 'API-Schlüssel',
   scanKeyStored: 'Der Schlüssel wird verschlüsselt auf diesem Gerät gespeichert.',
   scanModel: 'Modell (optional)',
+  scanModelLoad: 'Modelle laden',
+  scanModelCount: 'Modelle verfügbar – ins Feld tippen oder auswählen.',
   scanModelHint: 'Leer lassen für das Standardmodell. Nur ändern, wenn der Anbieter das Modell abgeschaltet hat – es muss Bilder lesen können (Vision).',
   scanUsWarning: 'US-Anbieter: Das Bild verlässt die Schweiz/EU. Nur mit gültigem Vertrag (DPA).',
   scanAck: 'Ich bestätige, dass das Ausweisfoto inkl. Halterdaten zur Texterkennung an den gewählten Anbieter übermittelt wird und ein gültiger Auftragsverarbeitungsvertrag (DPA) besteht.',

@@ -12,6 +12,7 @@ import { bridgeFetch } from '../platform/apiBridge';
 import {
   parseScanResponse,
   parseVinScanResponse,
+  parseModelsResponse,
   sanitizeScanFields,
   normalizeVin,
   normalizePlate,
@@ -109,6 +110,40 @@ function vinForDisplay(raw: string | null): string | null {
   if (!raw) return null;
   const cleaned = raw.toUpperCase().replace(/\s+/g, '');
   return /^[A-Z0-9]{8,20}$/.test(cleaned) ? cleaned : null;
+}
+
+/** Ask the provider which models this key may use. Powers the Settings model
+ *  picker, so a retired default can be replaced without a new release. */
+export async function listScanModels(input: {
+  provider: ScanProvider;
+  apiKey: string;
+  accountId?: string;
+}): Promise<string[]> {
+  if (!input.apiKey) throw makeScanError('auth', 'missing key');
+  let res: Response;
+  try {
+    res = await bridgeFetch('/api/scan-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch (e) {
+    throw makeScanError('transport', e instanceof Error ? e.message : String(e));
+  }
+
+  const raw = await res.json().catch(() => null);
+  const body = raw as { error?: unknown; message?: unknown; details?: unknown } | null;
+  if (!res.ok || body?.error) {
+    const head =
+      body?.error && typeof body.error === 'object'
+        ? String((body.error as { message?: unknown }).message || '')
+        : String(body?.error || '');
+    const tail = String(body?.details || body?.message || '');
+    const msg = [head, tail && tail !== head ? tail : ''].filter(Boolean).join(' — ');
+    const looksAuth = res.status === 401 || res.status === 403;
+    throw makeScanError(looksAuth ? 'auth' : 'transport', msg || `status ${res.status}`);
+  }
+  return parseModelsResponse(raw);
 }
 
 export async function scanDocument(input: ScanInput): Promise<ScanResult> {

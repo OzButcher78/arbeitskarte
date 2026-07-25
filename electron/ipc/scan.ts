@@ -10,8 +10,43 @@
 // the raw provider JSON; documentScanner.ts parses + normalises it.
 // ============================================================================
 
-import { buildScanRequest, coerceScanProvider, type ScanKind } from '../../src/scan/scanProviders';
+import {
+  buildScanRequest,
+  buildModelsRequest,
+  coerceScanProvider,
+  type ScanKind,
+} from '../../src/scan/scanProviders';
 import { jsonResult, type IpcResult } from './types';
+
+/** GET the provider's model catalogue so Settings can offer real ids instead of
+ *  a hard-coded guess. Same transport reasoning as the scan call: the renderer
+ *  can't reach these hosts directly (CORS), and the key stays in this process. */
+export async function listScanModelsIpc(args: any): Promise<IpcResult> {
+  const { provider, apiKey, accountId } = args || {};
+  const prov = coerceScanProvider(provider);
+  if (!apiKey || typeof apiKey !== 'string') {
+    return jsonResult(400, { error: 'API-Schlüssel fehlt.' });
+  }
+  if (typeof fetch !== 'function') {
+    return jsonResult(500, { error: 'fetch nicht verfügbar im Hauptprozess.' });
+  }
+  try {
+    const req = buildModelsRequest(prov, apiKey, typeof accountId === 'string' ? accountId : undefined);
+    const res = await fetch(req.url, { method: 'GET', headers: req.headers });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { error: 'non_json_provider_response', status: res.status };
+    }
+    console.log(`[ipc:scan] models provider=${prov} status=${res.status}`);
+    return jsonResult(res.status, body);
+  } catch (err: any) {
+    console.error('[ipc:scan] ❌ model list failed:', err?.message);
+    return jsonResult(502, { error: 'Modell-Liste konnte nicht geladen werden.', details: err?.message });
+  }
+}
 
 export async function scanDocumentIpc(args: any): Promise<IpcResult> {
   const { provider, apiKey, imageBase64, mimeType, country, accountId, scanKind, model } = args || {};

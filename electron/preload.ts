@@ -45,6 +45,9 @@ const api = {
   // to the chosen OCR provider (image + BYO key never touch third-party infra).
   scanDocument: (args: unknown): Promise<IpcResult> =>
     ipcRenderer.invoke('scan:document', args),
+  /** GET the provider's model catalogue (Settings model picker). */
+  listScanModels: (args: unknown): Promise<IpcResult> =>
+    ipcRenderer.invoke('scan:models', args),
 
   // ── LAN photo companion (Phase 5) ────────────────────────────────────────
   // Pair a phone on the same LAN via QR to shoot a photo straight into the app.

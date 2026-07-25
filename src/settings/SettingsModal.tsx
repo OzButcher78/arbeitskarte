@@ -4,11 +4,12 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, FolderOpen, Download, Upload, Loader2, RefreshCw } from 'lucide-react';
 import { useLocale } from '../i18n/locale';
 import type { AppSettings, ScanProviderId } from '../types/jobcard';
 import { SCAN_PROVIDER_META, SCAN_MODELS } from '../scan/scanProviders';
 import { getDocScanKey, setDocScanKey } from '../platform/credentialStore';
+import { listScanModels } from '../scan/documentScanner';
 import { formatJobNumber } from '../numbering/jobNumber';
 import { runBackup, LAST_BACKUP_KEY } from '../backup/runBackup';
 import { pickBackupDir, revealBackupFolder } from '../backup/backupTarget';
@@ -63,6 +64,10 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
   const logoInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null);
+  /** The provider's model catalogue, fetched on demand with the entered key. */
+  const [models, setModels] = useState<{ state: 'idle' | 'loading' | 'loaded' | 'error'; ids: string[]; error?: string }>(
+    { state: 'idle', ids: [] },
+  );
   const [backupMsg, setBackupMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
@@ -72,6 +77,7 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
     setShowKey(false);
     setBusy(null);
     setBackupMsg(null);
+    setModels({ state: 'idle', ids: [] });
   }, [open, settings]);
 
   // Bail out while closed. Modal would render nothing anyway, but everything
@@ -90,6 +96,22 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
     try {
       updateShop({ logoDataUrl: await readFileAsDataUrl(file) });
     } catch { /* ignore */ }
+  };
+
+  /** Ask the provider which models the entered key may use, so a retired
+   *  default can be replaced here instead of in a new release. */
+  const handleLoadModels = async () => {
+    setModels({ state: 'loading', ids: [] });
+    try {
+      const ids = await listScanModels({
+        provider: draft.docScanProvider,
+        apiKey: apiKey.trim(),
+        accountId: draft.docScanProviderAccountId,
+      });
+      setModels({ state: 'loaded', ids });
+    } catch (e) {
+      setModels({ state: 'error', ids: [], error: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   const handlePickDir = async () => {
@@ -431,17 +453,44 @@ export default function SettingsModal({ open, settings, onSave, onClose, onDataR
               </div>
               <div>
                 <label className={labelCls}>{L('scanModel', 'Modell (optional)')}</label>
-                <input
-                  className={inputCls}
-                  value={draft.docScanModel ?? ''}
-                  onChange={(e) => update({ docScanModel: e.target.value.trim() })}
-                  placeholder={SCAN_MODELS[draft.docScanProvider]}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {L('scanModelHint', 'Leer lassen für das Standardmodell. Nur ändern, wenn der Anbieter das Modell abgeschaltet hat – es muss Bilder lesen können (Vision).')}
-                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={`${inputCls} flex-1`}
+                    list="scan-model-options"
+                    value={draft.docScanModel ?? ''}
+                    onChange={(e) => update({ docScanModel: e.target.value.trim() })}
+                    placeholder={SCAN_MODELS[draft.docScanProvider]}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => void handleLoadModels()}
+                    disabled={models.state === 'loading' || !apiKey.trim()}
+                    icon={models.state === 'loading' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                  >
+                    {L('scanModelLoad', 'Modelle laden')}
+                  </Button>
+                </div>
+                {/* A datalist rather than a <select>: the catalogue is a
+                    suggestion, not a constraint — a brand-new model id should
+                    still be typeable the day it ships. */}
+                <datalist id="scan-model-options">
+                  {models.ids.map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
+                {models.state === 'error' ? (
+                  <p className="mt-1 text-[11px] text-danger">{models.error}</p>
+                ) : models.state === 'loaded' ? (
+                  <p className="mt-1 text-[11px] text-muted">
+                    {models.ids.length} {L('scanModelCount', 'Modelle verfügbar – ins Feld tippen oder auswählen.')}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-faint">
+                    {L('scanModelHint', 'Leer lassen für das Standardmodell. Nur ändern, wenn der Anbieter das Modell abgeschaltet hat – es muss Bilder lesen können (Vision).')}
+                  </p>
+                )}
               </div>
               <label className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
                 <input type="checkbox" checked={draft.docScanComplianceAck} onChange={(e) => update({ docScanComplianceAck: e.target.checked })} className="w-5 h-5 mt-0.5" />

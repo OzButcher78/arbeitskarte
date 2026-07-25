@@ -310,6 +310,48 @@ export function buildScanRequest(
 }
 
 // ----------------------------------------------------------------------------
+// Model catalogue — "which models can THIS key actually use?"
+// ----------------------------------------------------------------------------
+// Providers retire model ids without notice, and the failure is opaque: a dead
+// id looks like any other HTTP 400/404. Rather than hard-coding a guess and
+// waiting for it to rot, Settings can ask the provider directly. Every provider
+// here exposes the OpenAI-compatible `/models` shape ({ data: [{ id }] }).
+
+export function buildModelsRequest(
+  provider: ScanProvider,
+  apiKey: string,
+  accountId?: string,
+): { url: string; headers: Record<string, string> } {
+  if (provider === 'anthropic') {
+    return {
+      url: 'https://api.anthropic.com/v1/models',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    };
+  }
+  const url =
+    provider === 'infomaniak'
+      ? `https://api.infomaniak.com/2/ai/${encodeURIComponent((accountId || '').trim())}/openai/v1/models`
+      : provider === 'mistral'
+        ? 'https://api.mistral.ai/v1/models'
+        : 'https://api.openai.com/v1/models';
+  return { url, headers: { authorization: `Bearer ${apiKey}` } };
+}
+
+/** Pull the model ids out of a `/models` response, newest-looking first. */
+export function parseModelsResponse(raw: unknown): string[] {
+  const data = (raw as { data?: unknown })?.data;
+  if (!Array.isArray(data)) return [];
+  const ids = data
+    .map((m) => (m && typeof m === 'object' ? (m as { id?: unknown }).id : m))
+    .filter((id): id is string => typeof id === 'string' && id.trim() !== '');
+  return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+// ----------------------------------------------------------------------------
 // parseScanResponse — extract the model's JSON envelope (CLIENT side)
 // ----------------------------------------------------------------------------
 
