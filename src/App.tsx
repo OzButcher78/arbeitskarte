@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ZoomIn, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useLocale } from './i18n/locale';
 import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity, DamageStroke } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
@@ -161,10 +161,11 @@ export default function App() {
 
   const handleNew = useCallback(async () => {
     const now = Date.now();
-    // Build a DRAFT — nothing is persisted until Speichern. The Auftrags-Nr. IS
-    // minted right here though (shop request: the number must be visible the
-    // moment the card opens, e.g. to label the physical folder). Like the paper
-    // pad, a cancelled card therefore consumes its number (counter gap).
+    // Build a DRAFT — the editor autosaves it as soon as anything is typed, and
+    // discards it again on exit if nothing was. The Auftrags-Nr. IS minted right
+    // here though (shop request: the number must be visible the moment the card
+    // opens, e.g. to label the physical folder). Like the paper pad, a discarded
+    // card therefore consumes its number (counter gap).
     const record: JobCardRecord = {
       id: newId(),
       jobNumber: '',
@@ -670,6 +671,10 @@ function EditView({
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
   const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
   const [mapMode, setMapMode] = useState<'select' | 'draw'>('select');
+  const [mapZoom, setMapZoom] = useState<1 | 2>(1);
+  /** Damage actions in order, so Rückgängig works for panel taps as well as
+   *  strokes. A ref, not state: undo never needs to trigger a render itself. */
+  const actionStack = useRef<Array<{ kind: 'stroke' } | { kind: 'panel'; id: string }>>([]);
   /** Which image the lightbox is showing (thumbnails are too small to check a
    *  scan against on a tablet). */
   const [lightbox, setLightbox] = useState<{ url: string; title: string } | null>(null);
@@ -946,24 +951,48 @@ function EditView({
     const next = new Set(selectedParts);
     if (next.has(partId)) next.delete(partId);
     else next.add(partId);
+    actionStack.current.push({ kind: 'panel', id: partId });
     update({ damagedParts: Array.from(next) });
   };
 
   // Freehand strokes — functional updates are immune to stale record captures
   // (native listeners in CarMap may fire against an older closure).
   const strokes = record.damageStrokes ?? [];
-  const addStroke = (stroke: DamageStroke) =>
+  const addStroke = (stroke: DamageStroke) => {
+    actionStack.current.push({ kind: 'stroke' });
     setRecord((r) => (r ? { ...r, damageStrokes: [...(r.damageStrokes ?? []), stroke] } : r));
-  const undoStroke = () =>
-    setRecord((r) => (r ? { ...r, damageStrokes: (r.damageStrokes ?? []).slice(0, -1) } : r));
-  const clearStrokes = async () => {
+  };
+
+  /** Undo the last damage action of EITHER kind. Panel toggles are their own
+   *  inverse, so replaying one undoes it. */
+  const undoLast = () => {
+    const last = actionStack.current.pop();
+    if (!last) return;
+    if (last.kind === 'stroke') {
+      setRecord((r) => (r ? { ...r, damageStrokes: (r.damageStrokes ?? []).slice(0, -1) } : r));
+      return;
+    }
+    setRecord((r) => {
+      if (!r) return r;
+      const next = new Set(r.damagedParts);
+      if (next.has(last.id)) next.delete(last.id);
+      else next.add(last.id);
+      return { ...r, damagedParts: Array.from(next) };
+    });
+  };
+
+  /** Clears strokes AND selection — deselecting ten panels one by one was ten
+   *  taps, and the old button only ever cleared the drawing layer. */
+  const resetDamage = async () => {
     const ok = await confirm({
-      title: t.carmapClear,
-      message: t.carmapClearConfirm,
-      confirmLabel: t.delete,
+      title: t.carmapReset,
+      message: t.carmapResetConfirm,
+      confirmLabel: t.carmapReset,
       confirmVariant: 'danger',
     });
-    if (ok) update({ damageStrokes: [] });
+    if (!ok) return;
+    actionStack.current = [];
+    update({ damageStrokes: [], damagedParts: [] });
   };
 
   return (
@@ -1053,89 +1082,94 @@ function EditView({
           </div>
         </div>
 
-        {/* Schaden — car map */}
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        {/* Schaden — car map. Full card width: the map used to sit in one half
+            of a two-column grid, which on the tablet made the 49 panels roughly
+            half the size they needed to be. */}
+        <div className="rounded-card border border-line bg-paper p-4 shadow-elev-card">
           <div className="mb-2.5 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.sectionSchaden}</h2>
-            <span className="text-xs text-slate-400">{mapMode === 'draw' ? t.carmapHintDraw : t.schadenHint}</span>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{t.sectionSchaden}</h2>
+            <span className="text-xs text-faint">{mapMode === 'draw' ? t.carmapHintDraw : t.schadenHint}</span>
           </div>
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            <div>
-          <div className="mx-auto w-full max-w-xl">
-            <CarMap
-              selected={selectedParts}
-              strokes={strokes}
-              mode={mapMode}
-              onToggle={toggleDamage}
-              onStrokeAdd={addStroke}
-            />
+
+          {/* Zoom is a scroll container with a 2x-wide inner wrapper. CarMap maps
+              pointer coordinates through svg.getScreenCTM().inverse(), so hits and
+              strokes stay correct with no change to the drawing maths — and the
+              SVG itself is never touched. */}
+          <div className={mapZoom === 2 ? 'overflow-auto' : ''}>
+            <div className="mx-auto w-full max-w-3xl" style={mapZoom === 2 ? { width: '200%', maxWidth: 'none' } : undefined}>
+              <CarMap
+                selected={selectedParts}
+                strokes={strokes}
+                mode={mapMode}
+                onToggle={toggleDamage}
+                onStrokeAdd={addStroke}
+              />
+            </div>
           </div>
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-300">
+            <div className="inline-flex overflow-hidden rounded-control border border-line-strong">
               <button
                 type="button"
                 onClick={() => setMapMode('select')}
                 aria-pressed={mapMode === 'select'}
-                className={`px-2.5 py-1.5 text-xs font-medium ${
-                  mapMode === 'select' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                className={`ui-control px-3 text-xs font-semibold ${
+                  mapMode === 'select' ? 'bg-accent text-white' : 'bg-paper text-ink hover:bg-surface'
                 }`}
               >
                 {t.carmapModeSelect}
               </button>
               <button
                 type="button"
-                onClick={() => setMapMode('draw')}
+                onClick={() => { setMapMode('draw'); setMapZoom(1); }}
                 aria-pressed={mapMode === 'draw'}
-                className={`px-2.5 py-1.5 text-xs font-medium ${
-                  mapMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
+                className={`ui-control px-3 text-xs font-semibold ${
+                  mapMode === 'draw' ? 'bg-accent text-white' : 'bg-paper text-ink hover:bg-surface'
                 }`}
               >
                 {t.carmapModeDraw}
               </button>
             </div>
-            {mapMode === 'draw' && (
-              <>
-                <button
-                  type="button"
-                  onClick={undoStroke}
-                  disabled={strokes.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  <Undo2 size={14} /> {t.carmapUndo}
-                </button>
-                <button
-                  type="button"
-                  onClick={clearStrokes}
-                  disabled={strokes.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  <Trash2 size={14} /> {t.carmapClear}
-                </button>
-              </>
+
+            {/* Select mode only: draw-mode sets touch-action:none, so a zoomed
+                canvas could not be panned — a zoom without pan is a trap. */}
+            {mapMode === 'select' && (
+              <Button size="sm" variant="secondary" onClick={() => setMapZoom((z) => (z === 1 ? 2 : 1))} icon={<ZoomIn size={14} />}>
+                {mapZoom === 1 ? t.carmapZoomIn : t.carmapZoomOut}
+              </Button>
             )}
+
+            {/* Undo now covers BOTH modes — it used to be hidden behind draw mode
+                and did not know about panel selection at all. */}
+            <Button size="sm" variant="secondary" onClick={undoLast} disabled={actionStack.current.length === 0} icon={<Undo2 size={14} />}>
+              {t.carmapUndo}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void resetDamage()} disabled={strokes.length === 0 && record.damagedParts.length === 0} icon={<Trash2 size={14} />}>
+              {t.carmapReset}
+            </Button>
           </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="flex flex-wrap content-start gap-1.5">
+              {record.damagedParts.length === 0 ? (
+                <span className="text-xs text-faint">{t.noDamageSelected}</span>
+              ) : (
+                record.damagedParts.map((partId) => {
+                  const chipCls = CHIP_CLASSES[panelCategory(partId)];
+                  return (
+                    <button
+                      key={partId}
+                      onClick={() => toggleDamage(partId)}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold ${chipCls}`}
+                      title={t.delete}
+                      aria-label={`${panelLabel(partId)} — ${t.delete}`}
+                    >
+                      {panelLabel(partId)} <X size={12} />
+                    </button>
+                  );
+                })
+              )}
             </div>
-            <div>
-          <div className="flex flex-wrap gap-1.5">
-            {record.damagedParts.length === 0 ? (
-              <span className="text-xs text-slate-400">{t.noDamageSelected}</span>
-            ) : (
-              record.damagedParts.map((partId) => {
-                const chipCls = CHIP_CLASSES[panelCategory(partId)];
-                return (
-                  <button
-                    key={partId}
-                    onClick={() => toggleDamage(partId)}
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${chipCls}`}
-                    title={t.delete}
-                  >
-                    {panelLabel(partId)} ✕
-                  </button>
-                );
-              })
-            )}
-          </div>
-          <div className="mt-3">
             <Field label={t.schadenNotiz}>
               <textarea
                 value={record.schadenNotiz ?? ''}
@@ -1144,8 +1178,6 @@ function EditView({
                 className={`${inputClass} resize-y`}
               />
             </Field>
-          </div>
-            </div>
           </div>
         </div>
 
