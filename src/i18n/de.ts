@@ -90,8 +90,6 @@ export const de: Translations = {
   carmapUndo: 'Rückgängig',
   carmapReset: 'Zurücksetzen',
   carmapResetConfirm: 'Alle Markierungen und Zeichnungen auf der Schaden-Karte werden entfernt.',
-  carmapZoomIn: 'Vergrössern',
-  carmapZoomOut: 'Verkleinern',
   carmapHintDraw: 'Direkt auf der Karte zeichnen',
   fahrzeugmarke: 'Marke',
   fahrzeugtyp: 'Modell / Typ',

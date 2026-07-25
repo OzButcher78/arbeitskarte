@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ZoomIn, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useLocale } from './i18n/locale';
 import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity, DamageStroke } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
@@ -636,7 +636,7 @@ function StatusSelect({ status, onChange }: { status: JobStatus; onChange: (s: J
       onClick={(e) => e.stopPropagation()}
       title={t.colStatus}
       aria-label={t.colStatus}
-      className={`ui-control cursor-pointer rounded-full border px-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-accent/25 ${styles[status]}`}
+      className={`ui-control cursor-pointer rounded-full border pl-2.5 pr-1 text-xs font-semibold outline-none focus:ring-2 focus:ring-accent/25 ${styles[status]}`}
     >
       {STATUS_ORDER.map((s) => (
         <option key={s} value={s} className="bg-paper text-ink">
@@ -671,7 +671,6 @@ function EditView({
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
   const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
   const [mapMode, setMapMode] = useState<'select' | 'draw'>('select');
-  const [mapZoom, setMapZoom] = useState<1 | 2>(1);
   /** Damage actions in order, so Rückgängig works for panel taps as well as
    *  strokes. A ref, not state: undo never needs to trigger a render itself. */
   const actionStack = useRef<Array<{ kind: 'stroke' } | { kind: 'panel'; id: string }>>([]);
@@ -1091,20 +1090,14 @@ function EditView({
             <span className="text-xs text-faint">{mapMode === 'draw' ? t.carmapHintDraw : t.schadenHint}</span>
           </div>
 
-          {/* Zoom is a scroll container with a 2x-wide inner wrapper. CarMap maps
-              pointer coordinates through svg.getScreenCTM().inverse(), so hits and
-              strokes stay correct with no change to the drawing maths — and the
-              SVG itself is never touched. */}
-          <div className={mapZoom === 2 ? 'overflow-auto' : ''}>
-            <div className="mx-auto w-full max-w-3xl" style={mapZoom === 2 ? { width: '200%', maxWidth: 'none' } : undefined}>
-              <CarMap
-                selected={selectedParts}
-                strokes={strokes}
-                mode={mapMode}
-                onToggle={toggleDamage}
-                onStrokeAdd={addStroke}
-              />
-            </div>
+          <div className="mx-auto w-full max-w-3xl">
+            <CarMap
+              selected={selectedParts}
+              strokes={strokes}
+              mode={mapMode}
+              onToggle={toggleDamage}
+              onStrokeAdd={addStroke}
+            />
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1121,7 +1114,7 @@ function EditView({
               </button>
               <button
                 type="button"
-                onClick={() => { setMapMode('draw'); setMapZoom(1); }}
+                onClick={() => setMapMode('draw')}
                 aria-pressed={mapMode === 'draw'}
                 className={`ui-control px-3 text-xs font-semibold ${
                   mapMode === 'draw' ? 'bg-accent text-white' : 'bg-paper text-ink hover:bg-surface'
@@ -1130,14 +1123,6 @@ function EditView({
                 {t.carmapModeDraw}
               </button>
             </div>
-
-            {/* Select mode only: draw-mode sets touch-action:none, so a zoomed
-                canvas could not be panned — a zoom without pan is a trap. */}
-            {mapMode === 'select' && (
-              <Button size="sm" variant="secondary" onClick={() => setMapZoom((z) => (z === 1 ? 2 : 1))} icon={<ZoomIn size={14} />}>
-                {mapZoom === 1 ? t.carmapZoomIn : t.carmapZoomOut}
-              </Button>
-            )}
 
             {/* Undo now covers BOTH modes — it used to be hidden behind draw mode
                 and did not know about panel selection at all. */}
