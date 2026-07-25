@@ -39,6 +39,7 @@ import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/ConfirmDialog';
 import { Modal } from './ui/Modal';
 import { Button, IconButton } from './ui/Button';
+import { EmptyState } from './ui/EmptyState';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string; draft?: JobCardRecord };
 
@@ -101,7 +102,19 @@ export default function App() {
   const { confirm } = useConfirm();
   const [view, setView] = useState<View>({ kind: 'list' });
   const [cards, setCards] = useState<JobCardRecord[]>([]);
-  const [query, setQuery] = useState('');
+  // Lives here, not in ListView, so returning from the editor doesn't silently
+  // throw away the search and filters the user was working with.
+  const [listState, setListState] = useState<ListState>({
+    query: '',
+    statusFilter: 'alle',
+    sortField: 'date',
+    sortDir: 'desc',
+  });
+  const query = listState.query;
+  const patchListState = useCallback(
+    (patch: Partial<ListState>) => setListState((s) => ({ ...s, ...patch })),
+    [],
+  );
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [preview, setPreview] = useState<{ html: string; filename: string } | null>(null);
@@ -274,8 +287,10 @@ export default function App() {
         {view.kind === 'list' ? (
           <ListView
             cards={filtered}
-            query={query}
-            onQuery={setQuery}
+            totalCount={cards.length}
+            state={listState}
+            onState={patchListState}
+            onNew={() => void handleNew()}
             onOpen={(id) => setView({ kind: 'edit', id })}
             onDelete={handleDelete}
             onPreview={handlePreview}
@@ -379,10 +394,22 @@ function PreviewModal({ html, onPrint, onClose }: { html: string; onPrint: () =>
   );
 }
 
+/** Search, status filter and sort order live in App, not here, so that opening
+ *  a card and coming back doesn't silently reset what the user was looking at. */
+export interface ListState {
+  query: string;
+  statusFilter: JobStatus | 'alle';
+  sortField: 'nr' | 'date';
+  sortDir: 'asc' | 'desc';
+}
+
 function ListView(props: {
   cards: JobCardRecord[];
-  query: string;
-  onQuery: (q: string) => void;
+  /** Cards before the query filter — for the "x von y" hit count. */
+  totalCount: number;
+  state: ListState;
+  onState: (patch: Partial<ListState>) => void;
+  onNew: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onPreview: (id: string) => void;
@@ -390,20 +417,14 @@ function ListView(props: {
   onStatusChange: (id: string, status: JobStatus) => void;
 }) {
   const { t } = useLocale();
-  const { cards, query, onQuery, onOpen, onDelete, onPreview, onPrintPreview, onStatusChange } = props;
-
-  const [statusFilter, setStatusFilter] = useState<JobStatus | 'alle'>('alle');
-  const [sortField, setSortField] = useState<'nr' | 'date'>('date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const { cards, totalCount, state, onState, onNew, onOpen, onDelete, onPreview, onPrintPreview, onStatusChange } = props;
+  const { query, statusFilter, sortField, sortDir } = state;
 
   // Click a sortable header: toggle direction if it's the active column,
   // otherwise switch to it with a sensible default (dates newest-first).
   const toggleSort = (field: 'nr' | 'date') => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else {
-      setSortField(field);
-      setSortDir(field === 'date' ? 'desc' : 'asc');
-    }
+    if (sortField === field) onState({ sortDir: sortDir === 'asc' ? 'desc' : 'asc' });
+    else onState({ sortField: field, sortDir: field === 'date' ? 'desc' : 'asc' });
   };
 
   const visible = useMemo(() => {
@@ -419,24 +440,38 @@ function ListView(props: {
     return sorted;
   }, [cards, statusFilter, sortField, sortDir]);
 
+  const filtersActive = query.trim() !== '' || statusFilter !== 'alle';
+  const resetFilters = () => onState({ query: '', statusFilter: 'alle' });
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             value={query}
-            onChange={(e) => onQuery(e.target.value)}
+            onChange={(e) => onState({ query: e.target.value })}
             placeholder={t.search}
-            className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className={`${inputClass} ui-control pl-9 ${query ? 'pr-10' : ''}`}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => onState({ query: '' })}
+              aria-label={t.clearSearch}
+              title={t.clearSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-control p-1.5 text-faint hover:bg-surface-sunken hover:text-ink"
+            >
+              <X size={15} />
+            </button>
+          )}
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as JobStatus | 'alle')}
+          onChange={(e) => onState({ statusFilter: e.target.value as JobStatus | 'alle' })}
           title={t.filterStatus}
           aria-label={t.filterStatus}
-          className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-blue-500"
+          className={`${inputClass} ui-control w-auto`}
         >
           <option value="alle">{t.filterStatus}: {t.filterAll}</option>
           {STATUS_ORDER.map((s) => (
@@ -447,14 +482,35 @@ function ListView(props: {
         </select>
       </div>
 
-      {cards.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-500">
-          {t.noCards}
+      {/* Hit count only while a filter is on — "128 von 128" is noise. */}
+      {filtersActive && totalCount > 0 && (
+        <p className="mb-2 text-xs text-muted">
+          {visible.length} {t.countOfTotal} {totalCount}
+        </p>
+      )}
+
+      {totalCount === 0 ? (
+        <div className="rounded-card border border-line bg-paper shadow-elev-card">
+          <EmptyState
+            icon={<FilePlus2 size={30} />}
+            title={t.emptyNoCards}
+            hint={t.emptyNoCardsHint}
+            action={<Button variant="primary" onClick={onNew} icon={<FilePlus2 size={16} />}>{t.newCard}</Button>}
+          />
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-card border border-line bg-paper shadow-elev-card">
+          <EmptyState
+            icon={<Search size={30} />}
+            title={t.emptyNoMatch}
+            hint={t.emptyNoMatchHint}
+            action={<Button variant="secondary" onClick={resetFilters}>{t.resetFilters}</Button>}
+          />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-card border border-line bg-paper shadow-elev-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-line bg-surface-sunken/60 text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <SortHeader
                   label={t.colNumber}
@@ -463,7 +519,7 @@ function ListView(props: {
                   onClick={() => toggleSort('nr')}
                 />
                 <th className="px-4 py-2.5 font-semibold">{t.colName}</th>
-                <th className="px-4 py-2.5 font-semibold">{t.colPlate}</th>
+                <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">{t.colPlate}</th>
                 <th className="px-4 py-2.5 font-semibold">{t.colStatus}</th>
                 <SortHeader
                   label={t.colUpdated}
@@ -474,55 +530,47 @@ function ListView(props: {
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {visible.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
-                    {t.noCards}
-                  </td>
-                </tr>
-              )}
+            <tbody className="divide-y divide-line">
               {visible.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-1 font-medium">{c.jobNumber || '—'}</td>
-                  <td className="px-4 py-1">{c.name || c.vorname || c.firma || '—'}</td>
-                  <td className="px-4 py-1">{c.kontrollschild || '—'}</td>
-                  <td className="px-4 py-1">
+                // The WHOLE row opens the card. The old "Bearbeiten" text link was
+                // a ~50x20px target on a tablet, next to three icons that looked
+                // equally tappable but did other things.
+                <tr
+                  key={c.id}
+                  onClick={() => onOpen(c.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpen(c.id);
+                    }
+                  }}
+                  tabIndex={0}
+                  aria-label={`${t.open}: ${describeCard(c)}`}
+                  className="cursor-pointer outline-none transition-colors hover:bg-accent-soft/50 focus-visible:bg-accent-soft"
+                >
+                  <td className="px-4 py-2.5 font-semibold">{c.jobNumber || '—'}</td>
+                  <td className="px-4 py-2.5">{c.name || c.vorname || c.firma || '—'}</td>
+                  <td className="hidden px-4 py-2.5 sm:table-cell">{c.kontrollschild || '—'}</td>
+                  <td className="px-4 py-2.5">
                     <StatusSelect status={c.status} onChange={(s) => onStatusChange(c.id, s)} />
                   </td>
-                  <td className="px-4 py-1 text-slate-500">{formatDate(c.updatedAt)}</td>
-                  <td className="px-4 py-1 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => onPreview(c.id)}
-                        className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                        title={t.preview}
-                        aria-label={t.preview}
-                      >
-                        <Eye size={15} />
-                      </button>
-                      <button
-                        onClick={() => onPrintPreview(c.id)}
-                        className="rounded p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                        title={t.printPreview}
-                        aria-label={t.printPreview}
-                      >
-                        <Printer size={15} />
-                      </button>
-                      <button
-                        onClick={() => onOpen(c.id)}
-                        className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
-                      >
-                        {t.edit}
-                      </button>
-                      <button
-                        onClick={() => onDelete(c.id)}
-                        className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                        title={t.delete}
-                        aria-label={t.delete}
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                  <td className="px-4 py-2.5 text-muted">{formatDate(c.updatedAt)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {/* Different weights so the eye and the printer stop reading as
+                        two interchangeable icons. */}
+                    <div
+                      className="flex items-center justify-end gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <IconButton variant="ghost" onClick={() => onPreview(c.id)} title={t.preview} aria-label={t.preview}>
+                        <Eye size={18} />
+                      </IconButton>
+                      <IconButton variant="secondary" onClick={() => onPrintPreview(c.id)} title={t.printPreview} aria-label={t.printPreview}>
+                        <Printer size={18} />
+                      </IconButton>
+                      <IconButton variant="ghostDanger" onClick={() => onDelete(c.id)} title={t.delete} aria-label={t.delete}>
+                        <Trash2 size={18} />
+                      </IconButton>
                     </div>
                   </td>
                 </tr>
@@ -554,15 +602,15 @@ function SortHeader({
         type="button"
         onClick={onClick}
         aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-700 ${
-          active ? 'text-slate-700' : ''
+        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-ink ${
+          active ? 'text-ink' : ''
         }`}
       >
         {label}
         {active ? (
           dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />
         ) : (
-          <ChevronsUpDown size={13} className="text-slate-300" />
+          <ChevronsUpDown size={13} className="text-faint" />
         )}
       </button>
     </th>
@@ -585,10 +633,10 @@ function StatusSelect({ status, onChange }: { status: JobStatus; onChange: (s: J
       onClick={(e) => e.stopPropagation()}
       title={t.colStatus}
       aria-label={t.colStatus}
-      className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-200 ${styles[status]}`}
+      className={`ui-control cursor-pointer rounded-full border px-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-accent/25 ${styles[status]}`}
     >
       {STATUS_ORDER.map((s) => (
-        <option key={s} value={s} className="bg-white text-slate-800">
+        <option key={s} value={s} className="bg-paper text-ink">
           {t[`status_${s}`]}
         </option>
       ))}
