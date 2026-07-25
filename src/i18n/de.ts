@@ -13,6 +13,7 @@ export const de: Translations = {
   // Shell
   appTitle: 'Arbeitskarte',
   version: 'Version',
+  footerCredit: '© 2026 – Dieter Balmer · Balmer Storm Solutions',
 
   // List
   jobList: 'Arbeitskarten',

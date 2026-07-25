@@ -38,7 +38,7 @@ import { Section, Field, TextField, TextAreaField, CheckField, inputClass } from
 import { useToast } from './ui/Toast';
 import { useConfirm } from './ui/ConfirmDialog';
 import { Modal } from './ui/Modal';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
 
 type View = { kind: 'list' } | { kind: 'edit'; id: string; draft?: JobCardRecord };
 
@@ -106,6 +106,16 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [preview, setPreview] = useState<{ html: string; filename: string } | null>(null);
   const version = window.electronAPI?.appVersion ?? __APP_VERSION__;
+  /** Drives the header's hairline: a permanent border draws a box around a page
+   *  that isn't scrolled; a line that appears on scroll reads as depth. */
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const reload = useCallback(async () => {
     setCards(await loadJobCardsList());
@@ -228,38 +238,39 @@ export default function App() {
 
   return (
     // paddingBottom clears the Android navigation bar (edge-to-edge WebView on
-    // targetSdk 36) so the editor's Speichern/Abbrechen row isn't hidden behind it.
-    <div className="min-h-full bg-slate-50 text-slate-900" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+    // targetSdk 36) so the last row isn't hidden behind it. The gradient picks up
+    // the boot splash's colours (index.html) so app and splash read as one thing.
+    <div
+      className="min-h-full bg-gradient-to-b from-surface to-accent-soft/40 text-ink"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      <header
+        className={`sticky top-0 z-[var(--z-sticky)] bg-paper/85 backdrop-blur transition-shadow ${
+          scrolled ? 'border-b border-line shadow-elev-card' : 'border-b border-transparent'
+        }`}
+      >
         {/* Extra top padding = status-bar inset, so the title clears the Android
             status bar (clock/battery) instead of sitting underneath it. */}
         <div
-          className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-3"
+          className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-3"
           style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-baseline gap-2">
             <h1 className="text-lg font-bold tracking-tight">{t.appTitle}</h1>
-            <span className="text-xs text-slate-400">v{version}</span>
+            <span className="text-[11px] font-medium text-faint">v{version}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleNew}
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              <FilePlus2 size={16} /> {t.newCard}
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              title={t.settings}
-            >
-              <Settings size={16} /> {t.settings}
-            </button>
+            <Button variant="primary" onClick={handleNew} icon={<FilePlus2 size={16} />}>
+              {t.newCard}
+            </Button>
+            <Button variant="secondary" onClick={() => setSettingsOpen(true)} icon={<Settings size={16} />} title={t.settings}>
+              {t.settings}
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-5 py-6">
+      <main className="mx-auto max-w-6xl px-5 py-6">
         {view.kind === 'list' ? (
           <ListView
             cards={filtered}
@@ -282,6 +293,11 @@ export default function App() {
               setView({ kind: 'list' });
             }}
           />
+        )}
+
+        {/* Footer only on the list — the editor stays dense. */}
+        {view.kind === 'list' && (
+          <footer className="mt-10 pb-6 text-center text-xs text-faint">{t.footerCredit}</footer>
         )}
       </main>
 
@@ -320,7 +336,7 @@ function PreviewModal({ html, onPrint, onClose }: { html: string; onPrint: () =>
 
   return (
     <div
-      className="fixed inset-0 z-30 flex flex-col bg-slate-900/60 p-4"
+      className="fixed inset-0 z-[var(--z-modal)] flex flex-col bg-black/50 p-4"
       style={{
         paddingTop: 'calc(1rem + env(safe-area-inset-top))',
         paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
@@ -328,29 +344,21 @@ function PreviewModal({ html, onPrint, onClose }: { html: string; onPrint: () =>
       onClick={onClose}
     >
       <div
-        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+        className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-card bg-paper shadow-elev-pop"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-slate-700">{t.preview}</h2>
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-ink">{t.preview}</h2>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onPrint}
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              <Printer size={16} /> {t.printCard}
-            </button>
-            <button
-              onClick={onClose}
-              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              title={t.close}
-              aria-label={t.close}
-            >
+            <Button variant="primary" onClick={onPrint} icon={<Printer size={16} />}>
+              {t.printCard}
+            </Button>
+            <IconButton aria-label={t.close} title={t.close} onClick={onClose}>
               <X size={18} />
-            </button>
+            </IconButton>
           </div>
         </div>
-        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+        <div className="flex-1 overflow-auto bg-surface-sunken p-4">
           <iframe
             title={t.preview}
             // Inject screen-only page padding — the print HTML uses `body{margin:0}`
