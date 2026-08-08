@@ -315,7 +315,9 @@ export default function App() {
 
         {/* Footer only on the list — the editor stays dense. */}
         {view.kind === 'list' && (
-          <footer className="mt-10 pb-6 text-center text-xs text-faint">{t.footerCredit}</footer>
+          <footer className="mt-10 pb-6 text-center text-xs text-faint">
+            {t.footerCredit} · v{version}
+          </footer>
         )}
       </main>
 
