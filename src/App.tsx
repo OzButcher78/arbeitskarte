@@ -521,16 +521,16 @@ function ListView(props: {
                   dir={sortDir}
                   onClick={() => toggleSort('nr')}
                 />
-                <th className="px-4 py-2.5 font-semibold">{t.colName}</th>
-                <th className="hidden px-4 py-2.5 font-semibold sm:table-cell">{t.colPlate}</th>
-                <th className="px-4 py-2.5 font-semibold">{t.colStatus}</th>
+                <th className="px-4 py-2 font-semibold">{t.colName}</th>
+                <th className="hidden px-4 py-2 font-semibold sm:table-cell">{t.colPlate}</th>
+                <th className="px-4 py-2 font-semibold">{t.colStatus}</th>
                 <SortHeader
                   label={t.colUpdated}
                   active={sortField === 'date'}
                   dir={sortDir}
                   onClick={() => toggleSort('date')}
                 />
-                <th className="px-4 py-2.5" />
+                <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -551,14 +551,17 @@ function ListView(props: {
                   aria-label={`${t.open}: ${describeCard(c)}`}
                   className="cursor-pointer outline-none transition-colors hover:bg-accent-soft/50 focus-visible:bg-accent-soft"
                 >
-                  <td className="px-4 py-2.5 font-semibold">{c.jobNumber || '—'}</td>
-                  <td className="px-4 py-2.5">{c.name || c.vorname || c.firma || '—'}</td>
-                  <td className="hidden px-4 py-2.5 sm:table-cell">{c.kontrollschild || '—'}</td>
-                  <td className="px-4 py-2.5">
+                  {/* py-1, not py-2.5: the 44px touch controls (status pill, icon
+                      buttons) already set the row height — padding on top of that
+                      only costs list density. */}
+                  <td className="px-4 py-1 font-semibold">{c.jobNumber || '—'}</td>
+                  <td className="px-4 py-1">{c.name || c.vorname || c.firma || '—'}</td>
+                  <td className="hidden px-4 py-1 sm:table-cell">{c.kontrollschild || '—'}</td>
+                  <td className="px-4 py-1">
                     <StatusSelect status={c.status} onChange={(s) => onStatusChange(c.id, s)} />
                   </td>
-                  <td className="px-4 py-2.5 text-muted">{formatDate(c.updatedAt)}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="px-4 py-1 text-muted">{formatDate(c.updatedAt)}</td>
+                  <td className="px-4 py-1 text-right">
                     {/* Different weights so the eye and the printer stop reading as
                         two interchangeable icons. */}
                     <div
@@ -600,7 +603,7 @@ function SortHeader({
   onClick: () => void;
 }) {
   return (
-    <th className="px-4 py-2.5 font-semibold">
+    <th className="px-4 py-2 font-semibold">
       <button
         type="button"
         onClick={onClick}
