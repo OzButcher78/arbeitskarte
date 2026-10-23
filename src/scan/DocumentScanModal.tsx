@@ -200,6 +200,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
     return (
       <CameraCaptureModal
         remainingSlots={1}
+        singleShot
         onCapture={handleCameraCapture}
         onCancel={() => setCaptureSource(null)}
         variant={isVin ? 'photo' : 'document'}

@@ -144,6 +144,8 @@ export const de: Translations = {
   // Full-screen Fahrzeugausweis scan camera (document variant)
   cameraDocFrameHint: 'Fahrzeugausweis formatfüllend im Rahmen ausrichten',
   cameraDocRotateHint: 'Gerät quer halten – so wird der Ausweis formatfüllend erfasst',
+  // Scan camera after its one shot (replaces the job-photo "max reached" banner)
+  cameraSingleShotTaken: 'Foto aufgenommen – für den Scan wird genau ein Bild verwendet. Mit «Fertig» auslesen oder mit ✕ verwerfen und neu aufnehmen.',
 
   // LAN photo companion (Phase 5)
   scanCompanion: 'QR vom Handy',

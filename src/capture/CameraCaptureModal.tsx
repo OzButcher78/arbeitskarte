@@ -31,6 +31,12 @@ interface CameraCaptureModalProps {
   /** How many more photos the parent will accept this session. */
   remainingSlots: number;
   /**
+   * Scan flows (Fahrzeugausweis / VIN) use exactly one image. Caps the session at
+   * one shot and, once it is taken, shows a "taken — Fertig or retake" hint instead
+   * of the job-photo "max reached" banner (which reads like full storage here).
+   */
+  singleShot?: boolean;
+  /**
    * 'photo' (default) = the centered card camera for job photos / VIN plates.
    * 'document' = full-screen preview with a card-aspect alignment outline for the
    * Fahrzeugausweis scan. Drives BOTH the layout and the outline (no foot-gun of
@@ -55,6 +61,7 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   onCapture,
   onCancel,
   remainingSlots,
+  singleShot = false,
   variant = 'photo',
   country: _country,
 }) => {
@@ -63,6 +70,7 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   useAndroidBackHandler(() => { onCancel(); });
 
   const documentMode = variant === 'document';
+  const maxShots = singleShot ? 1 : remainingSlots;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -234,7 +242,7 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   const handleShutter = async () => {
     const video = videoRef.current;
     if (!video || !streamRef.current) return;
-    if (pending.length >= remainingSlots) return;
+    if (pending.length >= maxShots) return;
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
@@ -310,7 +318,10 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     onCancel();
   };
 
-  const reachedLimit = pending.length >= remainingSlots;
+  const reachedLimit = pending.length >= maxShots;
+  const limitText = singleShot
+    ? (tAny.cameraSingleShotTaken || 'Foto aufgenommen – für den Scan wird genau ein Bild verwendet. Mit «Fertig» auslesen oder mit ✕ verwerfen und neu aufnehmen.')
+    : (tAny.photoMaxReached || 'Maximum erreicht.');
 
   // Card-aspect alignment outline (document mode only), in on-screen coords.
   const frame = documentMode && contentRect
@@ -337,7 +348,7 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         onClick={handleShutter}
         disabled={error !== '' || starting || reachedLimit}
         className="w-16 h-16 rounded-full bg-white border-4 border-slate-300 hover:border-white shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
-        title={reachedLimit ? (tAny.photoMaxReached || 'Maximum erreicht') : (tAny.cameraShutter || 'Auslösen')}
+        title={reachedLimit ? limitText : (tAny.cameraShutter || 'Auslösen')}
         aria-label={tAny.cameraShutter || 'Auslösen'}
       />
 
@@ -377,9 +388,15 @@ const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
   const renderLimitBanner = () =>
     reachedLimit ? (
-      <div className="bg-amber-50 text-amber-700 text-[11px] text-center py-1 border-t border-amber-200 pointer-events-auto">
-        {tAny.photoMaxReached || 'Maximum erreicht.'}
-      </div>
+      singleShot ? (
+        <div className="bg-emerald-50 text-emerald-800 text-xs font-medium text-center px-3 py-1.5 border-t border-emerald-200 pointer-events-auto">
+          {limitText}
+        </div>
+      ) : (
+        <div className="bg-amber-50 text-amber-700 text-[11px] text-center py-1 border-t border-amber-200 pointer-events-auto">
+          {limitText}
+        </div>
+      )
     ) : null;
 
   const renderErrorContent = () => (
