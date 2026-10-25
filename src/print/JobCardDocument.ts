@@ -134,7 +134,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
 
   // Bottom half of page 2: the Fahrzeugausweis (photos moved to their own pages).
   const ausweis = ausweisDataUrl
-    ? `<h3 class="sec">Fahrzeugausweis</h3><img class="ausweis" src="${ausweisDataUrl}" alt="Fahrzeugausweis">`
+    ? `<h3 class="sec">Fahrzeugausweis</h3><div class="ausweis-box"><img class="ausweis" src="${ausweisDataUrl}" alt="Fahrzeugausweis"></div>`
     : '';
   const media = ausweis ? `<div class="media-half">${ausweis}</div>` : '';
 
@@ -208,13 +208,18 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
      card. Reserves ~8.5mm, which is taken off .arb-half below. */
   .pagehead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 11px; color: #444; border-bottom: 1px solid #999; padding-bottom: 3px; margin-bottom: 4mm; }
   /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the
-     fold. Reduced from 135mm by the height of .pagehead so the Ausweis stays on
-     page 2 instead of spilling onto a third sheet. */
-  .arb-half { min-height: 126mm; }
-  /* Keep the Ausweis heading with its image. */
-  .media-half { break-inside: avoid; page-break-inside: avoid; }
-  /* Fill the whole bottom half of page 2 with the scanned Ausweis. */
-  .ausweis { width: 100%; max-width: 100%; max-height: 126mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 0; }
+     fold. */
+  .arb-half { min-height: 126mm; flex: none; }
+  /* With an Ausweis, page 2 is a fixed-height column (269mm printable, minus
+     slack) and the scan takes exactly the space left under Arbeiten. Fixed mm
+     budgets spilled it onto a third sheet whenever the rows or the crop's
+     aspect came out a few mm taller than planned. */
+  .page2.has-ausweis { display: flex; flex-direction: column; height: 264mm; }
+  .page2.has-ausweis .pagehead { flex: none; }
+  .media-half { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .media-half h3.sec { flex: none; }
+  .ausweis-box { flex: 1 1 0; min-height: 0; }
+  .ausweis { display: block; margin: 0 auto; max-width: 100%; max-height: 100%; border: 1px solid #cbd5e1; border-radius: 4px; }
   /* Page 3+: two attached photos per page, stacked and large. */
   .photo-page { break-before: page; page-break-before: always; }
   .photo-grid { display: flex; flex-direction: column; gap: 8mm; }
@@ -260,7 +265,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     </div>
   </div>
 
-  <div class="page2">
+  <div class="page2${media ? ' has-ausweis' : ''}">
     ${pageHead(r, 2, totalPages)}
     <div class="arb-half">
       <h3 class="sec">Arbeiten / Material</h3>
