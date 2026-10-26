@@ -115,6 +115,25 @@ test('OCR-split name across two bands (no street number read) rejoins as surname
   assert.equal(fields.halterOrt, 'Sattel');
 });
 
+test('Typengenehmigung: the code right of its label, or on the row below it', () => {
+  const sameRow: OcrWord[] = [word('24', 520, 300), word('Typengenehmigung', 560, 300), word('1VD653', 800, 300)];
+  assert.equal(parseOcrWords(sameRow, W, H).fields.typengenehmigung, '1VD653');
+
+  const below: OcrWord[] = [
+    word('Typengenehmigung', 560, 300), word('Réception', 760, 300), word('par', 880, 300), word('type', 930, 300),
+    word('1VD653', 580, 335),
+  ];
+  assert.equal(parseOcrWords(below, W, H).fields.typengenehmigung, '1VD653');
+});
+
+test('Typengenehmigung: no label → null, and a bare "24" house number is not an anchor', () => {
+  const words: OcrWord[] = [
+    word('Musterweg', 55, 130), word('24', 230, 130), word('BMW', 560, 130), word('320d', 640, 130),
+    word('1VD653', 580, 400),
+  ];
+  assert.equal(parseOcrWords(words, W, H).fields.typengenehmigung, null);
+});
+
 test('garbage in the Halter region: a clean "6430 Schwyz" lower on the card still fills PLZ/Ort (whole-image fallback)', () => {
   const words: OcrWord[] = [
     word('Halter', 50, 40),

@@ -40,6 +40,7 @@ export interface JobCardRecord {
   kontrollschild?: string; // (S) Kennzeichen — searchable
   vin?: string; // (S) Fahrgestellnummer — searchable
   stammnummer?: string; // (S) CH Stammnummer
+  typengenehmigung?: string; // (S) CH Typengenehmigung (Ausweis Feld 24)
   farbe?: string; // (S)
   erstzulassung?: string; // (S)
   kilometerstand?: string;

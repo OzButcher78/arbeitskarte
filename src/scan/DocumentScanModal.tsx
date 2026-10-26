@@ -469,6 +469,7 @@ const DocumentScanModal: React.FC<DocumentScanModalProps> = ({
                     {fieldRow('licensePlate', L('licensePlate', 'Kennzeichen'), true)}
                     {fieldRow('chassisNr', L('chassisNr', 'Fahrgestellnummer'), true)}
                     {fieldRow('stammnummer', L('stammnummer', 'Stammnummer'))}
+                    {fieldRow('typengenehmigung', L('typengenehmigung', 'Typengenehmigung'), true)}
                     {fieldRow('color', L('color', 'Farbe'))}
                     {fieldRow('erstzulassung', L('erstzulassung', 'Erstzulassung'))}
                     {fieldRow('insurance', L('insurance', 'Versicherung'))}

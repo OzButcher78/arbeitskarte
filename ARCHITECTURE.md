@@ -50,7 +50,7 @@ Three runtimes, resolved by `src/platform/detect.ts`: `browser` (dev), `electron
    4 providers, default Infomaniak/CH), `parseScanResponse` (strict-JSON envelope → `ScanFields`),
    `sanitizeScanFields` (anti-hallucination), `normalizeVin/Plate/Stammnummer`. **Extended vs. the
    source app:** `ScanFields` + the prompt read the Halter block (`halter{Vorname,Name,Strasse,Plz,
-   Ort}`) + `stammnummer`. Imported by three call sites that must agree: the Electron handler, the
+   Ort}`) + `stammnummer` + `typengenehmigung` (Ausweis field 24). Imported by three call sites that must agree: the Electron handler, the
    Android branch, and the client orchestrator.
 2. **`scan/documentScanner.ts`** — client orchestrator. Sends via `bridgeFetch`, maps
    `ScanFields` → `ScanResult` (English-ish keys + Halter), sets `lowConfidence`.

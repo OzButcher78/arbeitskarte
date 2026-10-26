@@ -222,6 +222,12 @@ const A = {
     labels: ['stammnummer', 'matricule', 'matricola'],
     numbers: ['18'],
   },
+  // Field 24, but the bare "24" is NOT an anchor: a house number "24" on the
+  // same row as a model like "320d" would read as the code.
+  typengenehmigung: {
+    labels: ['typengenehmigung', 'reception', 'approvazione'],
+    numbers: [],
+  },
   erstzulassung: {
     labels: [
       '1 inverkehrsetzung', 'inverkehrsetzung', 'inverkehrsetz',
@@ -456,6 +462,31 @@ function extractStammnummer(bands: Band[]): FieldHit | null {
     if (m && punct.test(m[2]) && punct.test(m[4])) {
       const digits = m[1] + m[3] + m[5];
       return { value: `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`, conf: meanConf(band.words) };
+    }
+  }
+  return null;
+}
+
+/** Typengenehmigung (field 24): a short letters+digits code AT or RIGHT of its
+ *  label, or on the row just below it. Anchor-only — the code has no shape
+ *  distinctive enough to be picked out of the whole card without its label. */
+function extractTypengenehmigung(bands: Band[]): FieldHit | null {
+  const code = (w: PWord): string | null => {
+    const t = w.raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (t.length < 4 || t.length > 10 || !/[0-9]/.test(t) || !/[A-Z]/.test(t)) return null;
+    if (looksLikeLabel(w.norm)) return null;
+    const plate = t.match(/^([A-Z]{2})\d+$/);
+    if (plate && CANTONS.has(plate[1])) return null;
+    return t;
+  };
+  for (let bi = 0; bi < bands.length; bi++) {
+    const idx = findAnchorIndex(bands[bi], [...A.typengenehmigung.labels], []);
+    if (idx < 0) continue;
+    const anchorX = bands[bi].words[idx].x0;
+    const below = bi + 1 < bands.length ? bands[bi + 1].words.filter((w) => w.x0 >= anchorX - 5) : [];
+    for (const w of [...wordsRightOf(bands[bi], idx), ...below]) {
+      const v = code(w);
+      if (v) return { value: v, conf: w.conf };
     }
   }
   return null;
@@ -839,7 +870,7 @@ export function parseOcrWords(
 ): ParseOcrResult {
   const fields: ScanFields = {
     marke: null, modell: null, kennzeichen: null, fahrgestellnummer: null, stammnummer: null,
-    farbe: null, erstzulassung: null, versicherung: null,
+    typengenehmigung: null, farbe: null, erstzulassung: null, versicherung: null,
     halterVorname: null, halterName: null, halterStrasse: null, halterPlz: null, halterOrt: null,
   };
   const confidence: Partial<Record<keyof ScanFields, number>> = {};
@@ -866,6 +897,8 @@ export function parseOcrWords(
 
   const stamm = extractStammnummer(bands);
   set('stammnummer', stamm, stamm ? normalizeStammnummer(stamm.value) : null);
+
+  set('typengenehmigung', extractTypengenehmigung(bands));
 
   const plate = extractPlate(bands);
   set('kennzeichen', plate, plate ? normalizePlate(plate.value) : null);

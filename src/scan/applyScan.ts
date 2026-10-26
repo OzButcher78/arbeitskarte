@@ -32,6 +32,7 @@ export function applyScanToRecord(record: JobCardRecord, scan: ScanResult): JobC
   if (has(scan.licensePlate)) patch.kontrollschild = scan.licensePlate.toUpperCase();
   if (has(scan.chassisNr)) patch.vin = scan.chassisNr.toUpperCase();
   if (has(scan.stammnummer)) patch.stammnummer = scan.stammnummer.toUpperCase();
+  if (has(scan.typengenehmigung)) patch.typengenehmigung = scan.typengenehmigung.toUpperCase();
   if (has(scan.color)) patch.farbe = scan.color;
   if (has(scan.erstzulassung)) patch.erstzulassung = scan.erstzulassung;
   if (has(scan.insurance)) patch.versicherung = scan.insurance;

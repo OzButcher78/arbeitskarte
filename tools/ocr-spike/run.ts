@@ -34,7 +34,7 @@ const SAMPLES = join(DIR, 'samples');
 const LANG_PATH = join(DIR, 'tessdata');
 
 const FIELDS: (keyof ScanFields)[] = [
-  'marke', 'modell', 'kennzeichen', 'fahrgestellnummer', 'stammnummer', 'farbe',
+  'marke', 'modell', 'kennzeichen', 'fahrgestellnummer', 'stammnummer', 'typengenehmigung', 'farbe',
   'erstzulassung', 'versicherung', 'halterVorname', 'halterName', 'halterStrasse',
   'halterPlz', 'halterOrt',
 ];

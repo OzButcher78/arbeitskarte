@@ -96,6 +96,7 @@ export const de: Translations = {
   kontrollschild: 'Kennzeichen',
   vin: 'Fahrgestellnummer (VIN)',
   stammnummer: 'Stammnummer',
+  typengenehmigung: 'Typengenehmigung',
   farbe: 'Farbe',
   erstzulassung: 'Erstzulassung',
   versicherung: 'Versicherung',

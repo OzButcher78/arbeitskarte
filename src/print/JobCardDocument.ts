@@ -7,8 +7,8 @@
 // Layout mirrors the shop's original paper Auftragskarte, kept to one physical
 // sheet (double-sided):
 //   • Page 1: slim letterhead, title + Ersatzwagen (L) / dates + Schlüssel-Code
-//     (R), status, Kunde / Fahrzeug (top half), then a large centred damage map
-//     filling the bottom half.
+//     (R), status, Kunde / Fahrzeug and ruled Notiz lines (top half, down to the
+//     fold), then a large centred damage map filling the bottom half.
 //   • Page 2 (back): Arbeiten/Material (top half), then the scanned
 //     Fahrzeugausweis + any job photos (bottom half).
 // ============================================================================
@@ -82,6 +82,16 @@ function pageHead(r: JobCardRecord, page: number, total: number): string {
   return `<div class="pagehead"><span>${left}</span><span>Seite ${page} / ${total}</span></div>`;
 }
 
+/** Front-page Notiz: ruled lines just above the fold for the customer to write
+ *  on. Typed Bemerkungen (`notes`) print on the lines; at least 3 are always
+ *  rendered so there is room left to write by hand. */
+function notizLines(notes: unknown): string {
+  const typed = String(notes ?? '').trim();
+  const lines = typed ? typed.split('\n') : [];
+  while (lines.length < 3) lines.push('');
+  return lines.map((l) => `<div class="wl">${esc(l)}</div>`).join('');
+}
+
 /** A free-text Arbeiten row. Always rendered — an empty value leaves a blank
  *  writing line so the card can still be filled in by hand. */
 function workRow(label: string, value: unknown): string {
@@ -112,6 +122,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     cell('Kennzeichen', r.kontrollschild),
     cell('Fahrgestell-Nr.', r.vin),
     cell('Stammnummer', r.stammnummer),
+    cell('Typengenehmigung', r.typengenehmigung),
     cell('Farbe', r.farbe),
     cell('Erstzulassung', r.erstzulassung),
     cell('Kilometerstand', r.kilometerstand),
@@ -129,7 +140,6 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     workRow('Nebenarbeiten', r.nebenarbeiten),
     workRow('Schneidfaden', r.schneidfaden),
     workRow('Ersatzwagen', r.arbeitenErsatzwagen),
-    workRow('Bemerkungen', r.notes),
   ].join('');
 
   // Bottom half of page 2: the Fahrzeugausweis (photos moved to their own pages).
@@ -161,32 +171,42 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   * { box-sizing: border-box; }
   /* All text pure black (shop request) — structure lines a neutral dark gray. */
   body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #000; font-size: 14px; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+  .letterhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 2px solid #000; padding-bottom: 3px; }
   .letterhead .name { font-size: 16px; font-weight: 700; }
   .letterhead img { max-height: 34px; max-width: 240px; object-fit: contain; }
-  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 10px 0 10px; }
+  /* Vertical spacing in the header + Kunde/Fahrzeug boxes is kept tight (font
+     sizes untouched) so the Notiz lines still fit above the fold. */
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 4px 0 6px; }
   .meta-l .title { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
   .meta-l .nr { font-size: 16px; font-weight: 700; color: #000; margin: 5px 0 10px; }
-  .slot { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; }
+  .slot { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
   .slot .k { color: #000; font-weight: 600; white-space: nowrap; min-width: 112px; }
   .slot .v { flex: 1; font-weight: 700; border-bottom: 1px solid #666; min-height: 19px; }
-  .statusrow { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin: 8px 0 0; }
+  .statusrow { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin: 4px 0 0; }
   .statusrow .st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: #000; }
   .statusrow .box { width: 15px; height: 15px; border: 1.5px solid #000; border-radius: 3px; box-sizing: border-box; flex-shrink: 0; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .box { border: 1px solid #666; border-radius: 6px; padding: 10px 13px; }
-  .box h3 { margin: 0 0 7px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; }
-  .cell { display: flex; gap: 8px; padding: 2px 0; }
-  .cell .lbl { color: #000; min-width: 112px; flex-shrink: 0; }
+  .box h3 { margin: 0 0 3px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; }
+  .cols .box { padding: 6px 11px; }
+  .cell { display: flex; gap: 8px; padding: 1px 0; line-height: 1.2; }
+  /* Wide enough for "Typengenehmigung" so every Fahrzeug value lines up. */
+  .cell .lbl { color: #000; min-width: 128px; flex-shrink: 0; }
   .cell .val { font-weight: 700; }
   /* Kunde / Halter: pull the bold value column a little further left. */
   .box.kunde .cell .lbl { min-width: 84px; }
-  /* The top block fills the upper part of page 1; kept short enough that the
-     damage map + beschädigte Teile + Schaden-Notiz all still fit on this one
-     sheet (the Notiz used to spill onto a near-empty page 2). */
-  .top-half { min-height: 120mm; }
-  /* Page-1 bottom half: one big damage map, centred. */
-  .schaden-full { margin-top: 2mm; }
+  /* The A4 fold is at 148.5mm on paper = 134.5mm below the 14mm margin. Nothing
+     prints within 4mm of it (printer offset + hand-fold tolerance): the top
+     block ends with the Notiz lines at 130.5mm and the damage section starts
+     8mm later at 138.5mm. Kept short enough that the damage map + beschädigte
+     Teile + Schaden-Notiz all still fit on this one sheet (the Notiz used to
+     spill onto a near-empty page 2). */
+  .top-half { min-height: 130.5mm; display: flex; flex-direction: column; }
+  .notiz-lines { margin-top: auto; padding-top: 1mm; }
+  .notiz-lines .heading { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .notiz-lines .wl { min-height: 6.5mm; border-bottom: 1px solid #666; display: flex; align-items: flex-end; padding-bottom: 1mm; font-weight: 700; white-space: pre-wrap; }
+  /* Page-1 bottom half: one big damage map, centred, below the fold band. */
+  .schaden-full { margin-top: 8mm; }
   .carmap-big { text-align: center; margin: 2mm 0; }
   .carmap-big svg { width: 134mm; max-width: 100%; height: auto; display: inline-block; }
   /* Car map stays centred (.carmap-big); the parts title + text align left. */
@@ -196,8 +216,9 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .parts .heading { color: #000; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
   .parts .list { font-weight: 600; }
   .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
-  /* Back page: bigger labels; row height unchanged (taller line, less padding)
-     so the 9 rows still fill exactly the top half above the fold. */
+  /* Back page: bigger labels; row height unchanged (taller line, less padding).
+     Bemerkungen moved to the front Notiz lines, so 8 rows; .arb-half's
+     min-height still keeps the Ausweis below the fold. */
   table.arb { width: 100%; border-collapse: collapse; }
   table.arb th { text-align: left; vertical-align: top; color: #000; font-weight: 600; width: 175px; padding: 8px 8px 8px 0; border-bottom: 1px solid #666; }
   table.arb td { vertical-align: top; font-weight: 700; padding: 8px 0; border-bottom: 1px solid #666; }
@@ -252,6 +273,11 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   <div class="cols">
     <div class="box kunde"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}</div>
     <div class="box"><h3>Fahrzeug</h3>${fahrzeug || '<div class="cell"><span class="val">—</span></div>'}</div>
+  </div>
+
+  <div class="notiz-lines">
+    <div class="heading">Notiz</div>
+    ${notizLines(r.notes)}
   </div>
   </div>
 

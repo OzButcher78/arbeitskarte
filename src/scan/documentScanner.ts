@@ -34,6 +34,7 @@ export interface ScanResult {
   licensePlate: string | null;
   chassisNr: string | null;
   stammnummer: string | null;
+  typengenehmigung: string | null;
   color: string | null;
   erstzulassung: string | null;
   insurance: string | null;
@@ -69,6 +70,7 @@ function toScanResult(fields: ScanFields, extraLowConfidence = false): ScanResul
     licensePlate: normalizePlate(sanitized.kennzeichen),
     chassisNr: vinForDisplay(sanitized.fahrgestellnummer),
     stammnummer: normalizeStammnummer(sanitized.stammnummer),
+    typengenehmigung: sanitized.typengenehmigung,
     color: sanitized.farbe,
     erstzulassung: sanitized.erstzulassung,
     insurance: sanitized.versicherung,
@@ -90,7 +92,7 @@ export function makeScanError(code: ScanErrorCode, message?: string): Error {
 export function emptyScanResult(): ScanResult {
   return {
     make: null, model: null, licensePlate: null, chassisNr: null, stammnummer: null,
-    color: null, erstzulassung: null, insurance: null,
+    typengenehmigung: null, color: null, erstzulassung: null, insurance: null,
     halterVorname: null, halterName: null, halterStrasse: null, halterPlz: null, halterOrt: null,
   };
 }
@@ -98,7 +100,7 @@ export function emptyScanResult(): ScanResult {
 /** True if every extracted field came back empty. */
 export function isEmptyScanResult(r: ScanResult): boolean {
   return (
-    !r.make && !r.model && !r.licensePlate && !r.chassisNr && !r.stammnummer &&
+    !r.make && !r.model && !r.licensePlate && !r.chassisNr && !r.stammnummer && !r.typengenehmigung &&
     !r.color && !r.erstzulassung && !r.insurance &&
     !r.halterVorname && !r.halterName && !r.halterStrasse && !r.halterPlz && !r.halterOrt
   );
@@ -218,7 +220,7 @@ export async function scanDocument(input: ScanInput): Promise<ScanResult> {
     const decoded = decodeVin(vinFields.vin);
     const plate = sanitizeScanFields({
       marke: null, modell: null, kennzeichen: vinFields.kennzeichen, fahrgestellnummer: null,
-      stammnummer: null, farbe: null, erstzulassung: null, versicherung: null,
+      stammnummer: null, typengenehmigung: null, farbe: null, erstzulassung: null, versicherung: null,
       halterVorname: null, halterName: null, halterStrasse: null, halterPlz: null, halterOrt: null,
     }).kennzeichen;
     return {

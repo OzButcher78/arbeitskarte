@@ -791,7 +791,7 @@ function EditView({
     const texts: (string | undefined)[] = [
       r.repDatum, r.abholdatum, r.schluesselCode, r.ersatzwagenKopf,
       r.firma, r.vorname, r.name, r.strasse, r.plzOrt, r.telefon, r.telefon2, r.kundeNotiz,
-      r.fahrzeugmarke, r.fahrzeugtyp, r.kontrollschild, r.vin, r.stammnummer, r.farbe,
+      r.fahrzeugmarke, r.fahrzeugtyp, r.kontrollschild, r.vin, r.stammnummer, r.typengenehmigung, r.farbe,
       r.erstzulassung, r.kilometerstand, r.versicherung, r.schadenNr, r.schadenNotiz,
       r.spenglerarbeit, r.ersatzteileKleinmat, r.lackierarbeit, r.lackmaterial, r.kittsatz,
       r.nebenarbeiten, r.schneidfaden, r.arbeitenErsatzwagen, r.notes,
@@ -1078,6 +1078,7 @@ function EditView({
           <TextField record={record} update={update} field="kontrollschild" label={t.kontrollschild} upper />
           <TextField record={record} update={update} field="vin" label={t.vin} upper />
           <TextField record={record} update={update} field="stammnummer" label={t.stammnummer} />
+          <TextField record={record} update={update} field="typengenehmigung" label={t.typengenehmigung} upper />
           <TextField record={record} update={update} field="farbe" label={t.farbe} />
           <TextField record={record} update={update} field="erstzulassung" label={t.erstzulassung} />
           <TextField record={record} update={update} field="versicherung" label={t.versicherung} />

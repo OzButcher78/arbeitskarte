@@ -86,8 +86,9 @@ export interface ScanComplianceAck {
 }
 
 /**
- * Complete extraction result. Vehicle fields + the Swiss Stammnummer + the
- * owner (Halter) name/address. NO policy/contract/insurance-certificate number.
+ * Complete extraction result. Vehicle fields + the Swiss Stammnummer and
+ * Typengenehmigung + the owner (Halter) name/address. NO
+ * policy/contract/insurance-certificate number.
  */
 export interface ScanFields {
   // Fahrzeug
@@ -96,6 +97,7 @@ export interface ScanFields {
   kennzeichen: string | null;
   fahrgestellnummer: string | null;
   stammnummer: string | null;
+  typengenehmigung: string | null;
   farbe: string | null;
   erstzulassung: string | null;
   versicherung: string | null;
@@ -113,6 +115,7 @@ export const SCAN_FIELD_KEYS: ReadonlyArray<keyof ScanFields> = [
   'kennzeichen',
   'fahrgestellnummer',
   'stammnummer',
+  'typengenehmigung',
   'farbe',
   'erstzulassung',
   'versicherung',
@@ -155,8 +158,8 @@ export interface ScanRequest {
 
 export const PROMPT = `You are a precise data-extraction engine for European vehicle registration documents (Swiss "Fahrzeugausweis", German "Zulassungsbescheinigung Teil I", French "carte grise", Italian "libretto di circolazione").
 
-Return STRICT JSON with EXACTLY these thirteen keys and no others:
-{"marke":string|null,"modell":string|null,"kennzeichen":string|null,"fahrgestellnummer":string|null,"stammnummer":string|null,"farbe":string|null,"erstzulassung":string|null,"versicherung":string|null,"halterVorname":string|null,"halterName":string|null,"halterStrasse":string|null,"halterPlz":string|null,"halterOrt":string|null}
+Return STRICT JSON with EXACTLY these fourteen keys and no others:
+{"marke":string|null,"modell":string|null,"kennzeichen":string|null,"fahrgestellnummer":string|null,"stammnummer":string|null,"typengenehmigung":string|null,"farbe":string|null,"erstzulassung":string|null,"versicherung":string|null,"halterVorname":string|null,"halterName":string|null,"halterStrasse":string|null,"halterPlz":string|null,"halterOrt":string|null}
 
 ABSOLUTE RULE — DO NOT GUESS:
 - Extract ONLY values you can clearly READ on the document. If a field is absent, unreadable, blurry, masked, or you are not certain, output null for that field.
@@ -171,6 +174,7 @@ FIELD-CONFUSION GUARDS — every value MUST match its field's type:
 - "kennzeichen" is a registration plate (letters + digits, e.g. "SZ 12345").
 - "fahrgestellnummer" is a 17-character VIN (letters A-HJ-NPR-Z and digits 0-9).
 - "stammnummer" is the Swiss "Stammnummer" — a 9-digit number usually printed as "123.456.789". It is DIFFERENT from the 17-character VIN. Non-Swiss documents have no Stammnummer → null.
+- "typengenehmigung" is the type-approval number — a short code of letters and digits. It is DIFFERENT from the Stammnummer and from the VIN, and it is never a date.
 - "erstzulassung" is a DATE of first registration (contains a year).
 
 Field sources (EU harmonised letter codes appear on most documents):
@@ -179,6 +183,7 @@ Field sources (EU harmonised letter codes appear on most documents):
 - "kennzeichen": plate — "Kennzeichen" / "Kontrollschild" / "Immatriculation".
 - "fahrgestellnummer": VIN — code E (17 characters).
 - "stammnummer": Swiss "Stammnummer" (9 digits, e.g. 123.456.789).
+- "typengenehmigung": Swiss field 24 "Typengenehmigung" / "Réception par type" / "Approvazione del tipo"; on EU documents code K (type-approval number). Copy it exactly as printed.
 - "farbe": colour — code R / "Farbe" / "Couleur".
 - "erstzulassung": first registration — code B / "1. Inverkehrsetzung" / "1ère mise en circulation". Keep the document's own date format.
 - "versicherung": the insurer's COMPANY name only. Never a policy/contract/certificate number. If unreadable, output null.
@@ -239,7 +244,7 @@ export function buildScanRequest(
   const promptText = isVin ? VIN_PROMPT : PROMPT;
   const userText = isVin
     ? `Read the 17-character VIN (Fahrgestellnummer) from this photo of a car part as strict JSON.${countryHint(country)}`
-    : `Extract the vehicle fields, the Stammnummer and the owner (Halter) block from this registration document as strict JSON.${countryHint(country)}`;
+    : `Extract the vehicle fields, the Stammnummer, the Typengenehmigung and the owner (Halter) block from this registration document as strict JSON.${countryHint(country)}`;
 
   if (provider === 'anthropic') {
     return {
@@ -389,7 +394,7 @@ function cleanField(v: unknown): string | null {
 function emptyScanFields(): ScanFields {
   return {
     marke: null, modell: null, kennzeichen: null, fahrgestellnummer: null, stammnummer: null,
-    farbe: null, erstzulassung: null, versicherung: null,
+    typengenehmigung: null, farbe: null, erstzulassung: null, versicherung: null,
     halterVorname: null, halterName: null, halterStrasse: null, halterPlz: null, halterOrt: null,
   };
 }
@@ -414,6 +419,7 @@ export function parseScanResponse(provider: ScanProvider, raw: unknown): ScanFie
     kennzeichen: cleanField(obj.kennzeichen),
     fahrgestellnummer: cleanField(obj.fahrgestellnummer),
     stammnummer: cleanField(obj.stammnummer),
+    typengenehmigung: cleanField(obj.typengenehmigung),
     farbe: cleanField(obj.farbe),
     erstzulassung: cleanField(obj.erstzulassung),
     versicherung: cleanField(obj.versicherung),
@@ -621,6 +627,19 @@ export function sanitizeScanFields(fields: ScanFields): SanitizedScanFields {
 
   if (out.modell && LABEL_ECHOES_MODELL.has(normForLookup(out.modell))) {
     drop('modell');
+  }
+
+  if (out.typengenehmigung) {
+    const t = String(out.typengenehmigung).toUpperCase().replace(/\s+/g, ' ').trim();
+    const compact = t.replace(/[\s.]/g, '');
+    // A VIN, a 9-digit Stammnummer or a date is a neighbouring field misread here.
+    const isOtherField =
+      !!normalizeVin(compact) || /^\d{9}$/.test(compact) || /\b\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}\b/.test(t);
+    if (isOtherField || t.length > 30) {
+      drop('typengenehmigung');
+    } else {
+      out.typengenehmigung = t;
+    }
   }
 
   if (out.erstzulassung) {

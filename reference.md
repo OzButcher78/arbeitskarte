@@ -35,7 +35,8 @@ are required before the scanner is usable.
 ## Swiss Fahrzeugausweis field cues (extraction prompt)
 
 Marke/Modell = the "Marke und Typ" line (split); Kennzeichen/Kontrollschild; Fahrgestellnummer =
-17-char VIN (code E); **Stammnummer** = 9-digit `123.456.789` (distinct from the VIN); Erstzulassung
+17-char VIN (code E); **Stammnummer** = 9-digit `123.456.789` (distinct from the VIN);
+**Typengenehmigung** = field 24 (EU: code K), short letters+digits code, copied as printed; Erstzulassung
 = "1. Inverkehrsetzung" (code B); Halter block = codes C / C.1.1 (name) / C.1.3 (address).
 
 ## Local storage / keys
