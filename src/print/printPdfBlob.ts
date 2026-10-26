@@ -78,6 +78,10 @@ function printViaHiddenFrame(html: string): Promise<void> {
 
     frame.onload = () => {
       const win = frame.contentWindow;
+      // Chrome fires a synchronous load for the initial about:blank document
+      // when a frame without content is inserted; printing that gives an empty
+      // page. Only the srcdoc document is the card.
+      if (win && win.location.href !== 'about:srcdoc') return;
       if (!win) {
         frame.remove();
         reject(new Error('Die Druckvorschau konnte nicht geöffnet werden.'));
@@ -99,8 +103,10 @@ function printViaHiddenFrame(html: string): Promise<void> {
       fallbackTimer = window.setTimeout(cleanup, 60_000);
     };
 
-    document.body.appendChild(frame);
+    // srcdoc BEFORE insertion, so the frame never starts out as an empty
+    // about:blank document that onload (and print) could fire for.
     frame.srcdoc = html;
+    document.body.appendChild(frame);
   });
 }
 
