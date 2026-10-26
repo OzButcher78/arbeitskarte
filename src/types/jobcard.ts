@@ -34,6 +34,16 @@ export interface JobCardRecord {
   telefon2?: string; // second phone (manual)
   kundeNotiz?: string; // free note / remark on the customer (manual)
 
+  // Garage (einliefernde Garage) — printed under the Halter block. A SNAPSHOT
+  // of the address-book entry at the time it was picked (plus its id), so a
+  // later edit/delete in the Adressbuch never rewrites an already-printed card.
+  garageId?: string; // FK into garagen (informational; may dangle)
+  garageName?: string; // garage / company name — searchable
+  garageStrasse?: string;
+  garagePlzOrt?: string;
+  garageTelefon?: string;
+  garageEmail?: string;
+
   // Fahrzeug (right column) — scanned fields marked (S)
   fahrzeugmarke?: string; // (S) Marke
   fahrzeugtyp?: string; // (S) Modell/Typ
@@ -78,6 +88,18 @@ export interface BlobRecord {
   data: Blob;
   sha256?: string;
   createdAt: number;
+}
+
+/** Garagen-Adressbuch entry: a garage that regularly delivers vehicles. */
+export interface GarageRecord {
+  id: string; // uuid
+  name: string;
+  strasse?: string;
+  plzOrt?: string;
+  telefon?: string;
+  email?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type ScanProviderId = 'infomaniak' | 'openai' | 'anthropic' | 'mistral';

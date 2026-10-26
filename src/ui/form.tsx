@@ -27,15 +27,21 @@ export function Section({
   className,
   /** Override the default two-column grid — Settings wants a single column. */
   bodyClassName = 'grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2',
+  /** Right-aligned control(s) in the title row — e.g. the Garage address-book button. */
+  action,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
+  action?: React.ReactNode;
 }) {
   return (
     <div className={`rounded-card border border-line bg-paper p-4 shadow-elev-card ${className ?? ''}`}>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
+        {action}
+      </div>
       <div className={bodyClassName}>{children}</div>
     </div>
   );

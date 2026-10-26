@@ -33,13 +33,19 @@ Three runtimes, resolved by `src/platform/detect.ts`: `browser` (dev), `electron
 
 ## Storage
 
-- **Dexie** (`storage/db.ts`), DB name `Arbeitskarte_DB`, v1:
+- **Dexie** (`storage/db.ts`), DB name `Arbeitskarte_DB`, v3:
   - `jobcards: 'id, jobNumber, kontrollschild, vin, name, status, createdAt, updatedAt'`
   - `blobs: 'id, jobcardId, sortOrder'` — Ausweis (`kind:'ausweis'`) + photos (`kind:'photo'`), stored as `Blob`.
   - `appmeta: 'key'` — settings + counters.
-- **`storage/jobCardRepository.ts`** is the only module that touches Dexie: `saveJobCard`,
-  `getJobCard`, `deleteJobCard` (cascades blobs), `loadJobCardsList(filter)`, `getMaxJobNumber`,
-  `mintJobNumber`, `saveBlob`/`getBlob`/`getBlobs`/`deleteBlob`, `getSettings`/`saveSettings`.
+  - `garagen: 'id, name, updatedAt'` (v3) — the Garagen-Adressbuch (`GarageRecord`).
+- **`storage/jobCardRepository.ts`** is the module that touches Dexie for cards/blobs/settings:
+  `saveJobCard`, `getJobCard`, `deleteJobCard` (cascades blobs), `loadJobCardsList(filter)`,
+  `getMaxJobNumber`, `mintJobNumber`, `saveBlob`/`getBlob`/`getBlobs`/`deleteBlob`,
+  `getSettings`/`saveSettings`. **`storage/garageRepository.ts`** owns the `garagen` store.
+- **Garage on a card** is a *snapshot* (`garageId` + `garageName/Strasse/PlzOrt/Telefon`), copied
+  when an entry is picked in `garage/GaragePickerModal.tsx`. Editing or deleting an address-book
+  entry never changes an existing (possibly printed) card. Backups carry `garagen` alongside
+  jobcards/blobs (older backups without it leave the address book untouched on restore).
 - **Numbering** (`numbering/jobNumber.ts` + `mintJobNumber`): flat single counter, minted as
   `max(jobNextNumber, dbMax+1)` so a gap/imported higher number is never re-issued. Format
   `PREFIX-NNN` (`formatJobNumber`/`parseJobNumber`).
@@ -114,6 +120,14 @@ trailing `<g id="DrawLayer">` for freehand strokes. **Never edit / reformat / op
 
 - **`print/JobCardDocument.ts`** — `buildJobCardHtml()` returns a self-contained A4 page (inline
   CSS + inline base64 photos + inline car-map SVG). German labels hardcoded.
+  - **Fold band:** the card is folded in half by hand, so a 10mm band on each side of the A4
+    centre line (148.5mm) stays empty. With the 14mm page margin that means page-1's top block
+    (letterhead, Kopf, Kunde/Halter + Garage, Fahrzeug) ends by 124.5mm and the bottom block
+    (two Notiz lines, Schaden map, Beschädigte Teile) starts at 144.5mm; page 2's Arbeiten table
+    ends by ~119mm and the Fahrzeugausweis starts at ~145mm.
+  - Page 1 is a fixed-height flex column (264mm) and the car map takes whatever height is left
+    under the Notiz lines / above the parts list — so a long Schaden-Notiz shrinks the map instead
+    of pushing content onto a third page. Don't give the map a fixed width again.
 - **`print/printPdfBlob.ts`** — `printJobCard(html, filename)`: Electron → `renderHtmlToPdfBytes`
   (offscreen `printToPDF`) → `previewPdfBytes` (native preview window); Android/browser → open the
   page + system print dialog. No PDF is persisted — the card is stored as data and re-rendered.

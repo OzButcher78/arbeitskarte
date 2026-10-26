@@ -33,7 +33,7 @@ export async function deleteJobCard(id: string): Promise<void> {
 }
 
 export interface JobCardListFilter {
-  /** Free text matched across jobNumber / kontrollschild / vin / name. */
+  /** Free text matched across jobNumber / kontrollschild / vin / name / garageName. */
   query?: string;
   status?: JobCardRecord['status'];
 }
@@ -48,7 +48,7 @@ export async function loadJobCardsList(filter?: JobCardListFilter): Promise<JobC
   const q = filter?.query?.trim().toLowerCase();
   if (q) {
     rows = rows.filter((r) => {
-      const hay = [r.jobNumber, r.kontrollschild, r.vin, r.name]
+      const hay = [r.jobNumber, r.kontrollschild, r.vin, r.name, r.garageName]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();

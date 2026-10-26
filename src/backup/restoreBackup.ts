@@ -1,8 +1,9 @@
 // ============================================================================
 // restoreBackup — validate a backup envelope and write it back into Dexie.
 // ----------------------------------------------------------------------------
-// Only jobcards + blobs are restored (bulkPut). appmeta is intentionally NOT
-// restored so the current settings + job-number counter on this device are kept.
+// jobcards + blobs + the Garagen-Adressbuch are restored (bulkPut). appmeta is
+// intentionally NOT restored so the current settings + job-number counter on
+// this device are kept.
 // Records bypass Dexie's .upgrade() migrations, so the caller should warn when the
 // backup's dbVersion differs from db.verno (see hasVersionMismatch).
 // ============================================================================
@@ -63,13 +64,18 @@ export async function restoreBackup(envelope: BackupEnvelope, mode: RestoreMode)
       });
     }
 
-    await db.transaction('rw', db.jobcards, db.blobs, async () => {
+    // Older backups have no garagen array — leave the address book untouched.
+    const garagen = Array.isArray(envelope.garagen) ? envelope.garagen : null;
+
+    await db.transaction('rw', db.jobcards, db.blobs, db.garagen, async () => {
       if (mode === 'replace') {
         await db.jobcards.clear();
         await db.blobs.clear();
+        if (garagen) await db.garagen.clear();
       }
       await db.jobcards.bulkPut(envelope.jobcards);
       await db.blobs.bulkPut(blobRecords);
+      if (garagen) await db.garagen.bulkPut(garagen);
     });
 
     return { ok: true, jobcards: envelope.jobcards.length, blobs: blobRecords.length };

@@ -5,12 +5,14 @@
 // German-only, so labels are hardcoded here.
 //
 // Layout mirrors the shop's original paper Auftragskarte, kept to one physical
-// sheet (double-sided):
+// sheet (double-sided) that is folded in half:
 //   • Page 1: slim letterhead, title + Ersatzwagen (L) / dates + Schlüssel-Code
-//     (R), status, Kunde / Fahrzeug and ruled Notiz lines (top half, down to the
-//     fold), then a large centred damage map filling the bottom half.
+//     (R), status, Kunde / Halter (+ Garage) and Fahrzeug boxes (top half);
+//     two ruled Notiz lines and a centred damage map (bottom half).
 //   • Page 2 (back): Arbeiten/Material (top half), then the scanned
 //     Fahrzeugausweis + any job photos (bottom half).
+//   • Fold band: nothing prints within 10mm of the A4 centre line on either
+//     side, so the hand-folded card never creases through text.
 // ============================================================================
 
 import type { JobCardRecord, WorkshopIdentity } from '../types/jobcard';
@@ -82,13 +84,14 @@ function pageHead(r: JobCardRecord, page: number, total: number): string {
   return `<div class="pagehead"><span>${left}</span><span>Seite ${page} / ${total}</span></div>`;
 }
 
-/** Front-page Notiz: ruled lines just above the fold for the customer to write
- *  on. Typed Bemerkungen (`notes`) print on the lines; at least 3 are always
- *  rendered so there is room left to write by hand. */
+/** Front-page Notiz: ruled lines at the top of the bottom half (just under the
+ *  fold) to write on. Typed Bemerkungen (`notes`) print on the lines; at least
+ *  NOTIZ_LINES are always rendered so there is room left to write by hand. */
+const NOTIZ_LINES = 2;
 function notizLines(notes: unknown): string {
   const typed = String(notes ?? '').trim();
   const lines = typed ? typed.split('\n') : [];
-  while (lines.length < 3) lines.push('');
+  while (lines.length < NOTIZ_LINES) lines.push('');
   return lines.map((l) => `<div class="wl">${esc(l)}</div>`).join('');
 }
 
@@ -115,6 +118,16 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
     cell('Telefon 2', r.telefon2),
     cell('Notiz', r.kundeNotiz),
   ].join('');
+
+  // Einliefernde Garage — printed as its own titled block under the Halter.
+  const garageCells = [
+    cell('Firma', r.garageName),
+    cell('Strasse', r.garageStrasse),
+    cell('PLZ / Ort', r.garagePlzOrt),
+    cell('Telefon', r.garageTelefon),
+    cell('E-Mail', r.garageEmail),
+  ].join('');
+  const garage = garageCells ? `<div class="sub"><h3>Garage</h3>${garageCells}</div>` : '';
 
   const fahrzeug = [
     cell('Marke', r.fahrzeugmarke),
@@ -195,42 +208,49 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .cell .val { font-weight: 700; }
   /* Kunde / Halter: pull the bold value column a little further left. */
   .box.kunde .cell .lbl { min-width: 84px; }
-  /* The A4 fold is at 148.5mm on paper = 134.5mm below the 14mm margin. Nothing
-     prints within 4mm of it (printer offset + hand-fold tolerance): the top
-     block ends with the Notiz lines at 130.5mm and the damage section starts
-     8mm later at 138.5mm. Kept short enough that the damage map + beschädigte
-     Teile + Schaden-Notiz all still fit on this one sheet (the Notiz used to
-     spill onto a near-empty page 2). */
-  .top-half { min-height: 130.5mm; display: flex; flex-direction: column; }
-  .notiz-lines { margin-top: auto; padding-top: 1mm; }
+  /* Garage block under the Halter lines, inside the same box. */
+  .box .sub { margin-top: 5px; padding-top: 4px; border-top: 1px solid #bbb; }
+  .box .sub h3 { margin-bottom: 2px; }
+  /* ── Fold band ──────────────────────────────────────────────────────────
+     The A4 fold is at 148.5mm on paper = 134.5mm below the 14mm top margin.
+     The card is folded by hand, so a 10mm band on EACH side of the fold is
+     kept empty: page-1's top block ends by 124.5mm and the bottom block
+     starts at 144.5mm. Page 1 is a fixed-height column (269mm printable
+     minus slack) so the bottom block can never spill onto a new sheet: the
+     damage map simply takes whatever height is left. */
+  .page1 { height: 264mm; display: flex; flex-direction: column; }
+  .top-half { flex: none; min-height: 124.5mm; }
+  .bottom-half { flex: 1 1 0; min-height: 0; margin-top: 20mm; display: flex; flex-direction: column; }
+  /* Notiz: two ruled lines right under the fold band. */
+  .notiz-lines { flex: none; margin-bottom: 3mm; }
   .notiz-lines .heading { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
   .notiz-lines .wl { min-height: 6.5mm; border-bottom: 1px solid #666; display: flex; align-items: flex-end; padding-bottom: 1mm; font-weight: 700; white-space: pre-wrap; }
-  /* Page-1 bottom half: one big damage map, centred, below the fold band. */
-  .schaden-full { margin-top: 8mm; }
-  .carmap-big { text-align: center; margin: 2mm 0; }
-  .carmap-big svg { width: 134mm; max-width: 100%; height: auto; display: inline-block; }
+  /* Damage section fills the rest of the bottom half; the map scales to the
+     height left over after the heading, the parts list and the Schaden-Notiz. */
+  .schaden-full { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .schaden-full h3.sec { flex: none; }
+  .carmap-big { flex: 1 1 0; min-height: 0; text-align: center; margin: 1mm 0; }
+  .carmap-big svg { height: 100%; width: auto; max-width: 100%; display: inline-block; }
   /* Car map stays centred (.carmap-big); the parts title + text align left. */
-  /* Bottom half of page 1 (map + parts): sizes frozen per the shop — only the
-     text colour goes black here. */
-  .parts { font-size: 11px; margin-top: 4px; text-align: left; }
+  .parts { flex: none; font-size: 11px; margin-top: 4px; text-align: left; }
   .parts .heading { color: #000; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; margin-bottom: 3px; }
   .parts .list { font-weight: 600; }
   .parts .notiz { margin-top: 6px; white-space: pre-wrap; }
-  /* Back page: bigger labels; row height unchanged (taller line, less padding).
-     Bemerkungen moved to the front Notiz lines, so 8 rows; .arb-half's
-     min-height still keeps the Ausweis below the fold. */
+  /* Back page: bigger labels. Bemerkungen live on the front Notiz lines, so 8
+     rows of ~13mm — together with the running header + heading they end at
+     ~119mm, inside the 124.5mm fold-band limit. */
   table.arb { width: 100%; border-collapse: collapse; }
-  table.arb th { text-align: left; vertical-align: top; color: #000; font-weight: 600; width: 175px; padding: 8px 8px 8px 0; border-bottom: 1px solid #666; }
-  table.arb td { vertical-align: top; font-weight: 700; padding: 8px 0; border-bottom: 1px solid #666; }
-  table.arb td .wl { display: block; height: 36px; }
+  table.arb th { text-align: left; vertical-align: top; color: #000; font-weight: 600; width: 175px; padding: 7px 8px 7px 0; border-bottom: 1px solid #666; }
+  table.arb td { vertical-align: top; font-weight: 700; padding: 7px 0; border-bottom: 1px solid #666; }
+  table.arb td .wl { display: block; height: 34px; }
   h3.sec { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #000; border-bottom: 1px solid #666; padding-bottom: 3px; }
   .page2 { break-before: page; page-break-before: always; }
   /* Running header on pages 2+ so a loose sheet can still be traced back to its
      card. Reserves ~8.5mm, which is taken off .arb-half below. */
   .pagehead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 11px; color: #444; border-bottom: 1px solid #999; padding-bottom: 3px; margin-bottom: 4mm; }
-  /* Page-2 top half: Arbeiten/Material; min-height pushes the media below the
-     fold. */
-  .arb-half { min-height: 126mm; flex: none; }
+  /* Page-2 top half: Arbeiten/Material. Running header (~8.8mm) + 136mm puts
+     the media at ~144.8mm — the far edge of the fold band. */
+  .arb-half { min-height: 136mm; flex: none; }
   /* With an Ausweis, page 2 is a fixed-height column (269mm printable, minus
      slack) and the scan takes exactly the space left under Arbeiten. Fixed mm
      budgets spilled it onto a third sheet whenever the rows or the crop's
@@ -248,6 +268,7 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   .photo-cell img { max-width: 100%; max-height: 118mm; object-fit: contain; border: 1px solid #cbd5e1; border-radius: 4px; }
 </style></head>
 <body>
+  <div class="page1">
   <div class="top-half">
   <div class="letterhead">
     <div class="name">${esc(w.name)}</div>
@@ -271,14 +292,15 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
   </div>
 
   <div class="cols">
-    <div class="box kunde"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}</div>
+    <div class="box kunde"><h3>Kunde / Halter</h3>${kunde || '<div class="cell"><span class="val">—</span></div>'}${garage}</div>
     <div class="box"><h3>Fahrzeug</h3>${fahrzeug || '<div class="cell"><span class="val">—</span></div>'}</div>
   </div>
+  </div>
 
+  <div class="bottom-half">
   <div class="notiz-lines">
     <div class="heading">Notiz</div>
     ${notizLines(r.notes)}
-  </div>
   </div>
 
   <div class="schaden-full">
@@ -289,6 +311,8 @@ export function buildJobCardHtml(input: JobCardDocInput): string {
       <div class="list">${damaged ? esc(damaged) : '—'}</div>
       ${r.schadenNotiz ? `<div class="notiz">${esc(r.schadenNotiz)}</div>` : ''}
     </div>
+  </div>
+  </div>
   </div>
 
   <div class="page2${media ? ' has-ausweis' : ''}">

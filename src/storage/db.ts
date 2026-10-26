@@ -4,7 +4,7 @@
 // ============================================================================
 
 import Dexie, { type Table } from 'dexie';
-import type { JobCardRecord, BlobRecord } from '../types/jobcard';
+import type { JobCardRecord, BlobRecord, GarageRecord } from '../types/jobcard';
 import { LEGACY_PANEL_MIGRATION } from '../carmap/panels';
 
 export interface AppMetaRow {
@@ -16,6 +16,7 @@ export class ArbeitskarteDB extends Dexie {
   jobcards!: Table<JobCardRecord, string>;
   blobs!: Table<BlobRecord, string>;
   appmeta!: Table<AppMetaRow, string>;
+  garagen!: Table<GarageRecord, string>;
 
   constructor() {
     super('Arbeitskarte_DB');
@@ -53,6 +54,14 @@ export class ArbeitskarteDB extends Dexie {
             if (!Array.isArray(jc.damageStrokes)) jc.damageStrokes = [];
           }),
       );
+    // v3: Garagen-Adressbuch. New store only; job cards carry the garage as a
+    // snapshot (garageName/…), so no record migration is needed.
+    this.version(3).stores({
+      jobcards: 'id, jobNumber, kontrollschild, vin, name, status, createdAt, updatedAt',
+      blobs: 'id, jobcardId, sortOrder',
+      appmeta: 'key',
+      garagen: 'id, name, updatedAt',
+    });
   }
 }
 

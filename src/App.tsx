@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { FilePlus2, Printer, Search, Trash2, ChevronLeft, Settings, ScanLine, Camera, ImagePlus, X, Eye, Undo2, ChevronUp, ChevronDown, ChevronsUpDown, BookUser } from 'lucide-react';
 import { useLocale } from './i18n/locale';
 import type { JobCardRecord, JobStatus, AppSettings, WorkshopIdentity, DamageStroke } from './types/jobcard';
 import { DEFAULT_SETTINGS } from './types/jobcard';
@@ -34,6 +34,7 @@ import CameraCaptureModal from './capture/CameraCaptureModal';
 import { compressImage } from './capture/compressImage';
 import { MAX_PHOTOS_PER_JOB } from './capture/photoLimits';
 import DateField from './components/DateField';
+import GaragePickerModal from './garage/GaragePickerModal';
 import { Section, Field, TextField, TextAreaField, CheckField, inputClass } from './ui/form';
 import { useAutosave } from './storage/useAutosave';
 import { useAndroidBackHandler } from './platform/androidBackHandler';
@@ -151,7 +152,7 @@ export default function App() {
     const q = query.trim().toLowerCase();
     if (!q) return cards;
     return cards.filter((c) =>
-      [c.jobNumber, c.kontrollschild, c.vin, c.name, c.vorname, c.firma]
+      [c.jobNumber, c.kontrollschild, c.vin, c.name, c.vorname, c.firma, c.garageName]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -673,6 +674,7 @@ function EditView({
   const [record, setRecord] = useState<JobCardRecord | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [photoCamOpen, setPhotoCamOpen] = useState(false);
+  const [garagePickerOpen, setGaragePickerOpen] = useState(false);
   const [ausweisUrl, setAusweisUrl] = useState<string | null>(null);
   const [photoThumbs, setPhotoThumbs] = useState<{ id: string; url: string }[]>([]);
   const [mapMode, setMapMode] = useState<'select' | 'draw'>('select');
@@ -783,6 +785,12 @@ function EditView({
 
   const update = (patch: Partial<JobCardRecord>) => setRecord((r) => (r ? { ...r, ...patch } : r));
 
+  const hasGarage = [
+    record.garageName, record.garageStrasse, record.garagePlzOrt, record.garageTelefon, record.garageEmail,
+  ].some((v) => (v ?? '').trim() !== '');
+  const clearGarage = () =>
+    update({ garageId: undefined, garageName: '', garageStrasse: '', garagePlzOrt: '', garageTelefon: '', garageEmail: '' });
+
   /** Everything the user can actually put into a card. Explicitly a positive
    *  list: jobNumber/status/createdAt are populated before the user types a
    *  single character, so "is this record empty?" cannot be asked of the whole
@@ -791,6 +799,7 @@ function EditView({
     const texts: (string | undefined)[] = [
       r.repDatum, r.abholdatum, r.schluesselCode, r.ersatzwagenKopf,
       r.firma, r.vorname, r.name, r.strasse, r.plzOrt, r.telefon, r.telefon2, r.kundeNotiz,
+      r.garageName, r.garageStrasse, r.garagePlzOrt, r.garageTelefon, r.garageEmail,
       r.fahrzeugmarke, r.fahrzeugtyp, r.kontrollschild, r.vin, r.stammnummer, r.typengenehmigung, r.farbe,
       r.erstzulassung, r.kilometerstand, r.versicherung, r.schadenNr, r.schadenNotiz,
       r.spenglerarbeit, r.ersatzteileKleinmat, r.lackierarbeit, r.lackmaterial, r.kittsatz,
@@ -1084,6 +1093,32 @@ function EditView({
           <TextField record={record} update={update} field="versicherung" label={t.versicherung} />
           <TextField record={record} update={update} field="schadenNr" label={t.schadenNr} />
         </Section>
+
+        {/* Garage (einliefernde Garage) — printed under the Halter block. The
+            fields are free text; the Adressbuch copies a saved entry in. */}
+        <Section
+          title={t.sectionGarage}
+          action={
+            <div className="flex items-center gap-1">
+              {hasGarage && (
+                <IconButton aria-label={t.garageClear} onClick={clearGarage}>
+                  <X size={16} />
+                </IconButton>
+              )}
+              <Button size="sm" variant="secondary" icon={<BookUser size={14} />} onClick={() => setGaragePickerOpen(true)}>
+                {t.garageBook}
+              </Button>
+            </div>
+          }
+        >
+          <div className="sm:col-span-2">
+            <TextField record={record} update={update} field="garageName" label={t.garageName} />
+          </div>
+          <TextField record={record} update={update} field="garageStrasse" label={t.strasse} />
+          <TextField record={record} update={update} field="garagePlzOrt" label={t.plzOrt} />
+          <TextField record={record} update={update} field="garageTelefon" label={t.garageTelefon} />
+          <TextField record={record} update={update} field="garageEmail" label={t.email} />
+        </Section>
           </div>
         </div>
 
@@ -1288,6 +1323,29 @@ function EditView({
         country="CH"
         onApply={(fields, original) => void handleScanApply(fields, original)}
         onClose={() => setScanOpen(false)}
+      />
+
+      <GaragePickerModal
+        open={garagePickerOpen}
+        onClose={() => setGaragePickerOpen(false)}
+        current={{
+          name: record.garageName ?? '',
+          strasse: record.garageStrasse,
+          plzOrt: record.garagePlzOrt,
+          telefon: record.garageTelefon,
+          email: record.garageEmail,
+        }}
+        onSelect={(g) => {
+          update({
+            garageId: g.id,
+            garageName: g.name,
+            garageStrasse: g.strasse ?? '',
+            garagePlzOrt: g.plzOrt ?? '',
+            garageTelefon: g.telefon ?? '',
+            garageEmail: g.email ?? '',
+          });
+          toast.success(t.garageApplied);
+        }}
       />
 
       {photoCamOpen && (

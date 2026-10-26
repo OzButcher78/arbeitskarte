@@ -11,6 +11,22 @@ the device.
 
 ---
 
+## Start of every session — pull first
+
+This repo is edited from **two machines** (laptop and home desktop) and `main` on GitHub is the
+single source of truth. Before touching anything — reading code, planning, editing, building:
+
+```bash
+git status            # must be clean; stash or commit stray local changes first
+git pull --ff-only    # bring in what the other machine pushed
+npm install           # only if package-lock.json changed in the pull
+```
+
+If `git pull --ff-only` refuses (diverged histories), stop and show the user — never force. When a
+piece of work is finished, **commit and push** so the other machine finds it.
+
+---
+
 ## Identity & stack
 
 - **Stack:** React 19 + TypeScript + Vite + Dexie (IndexedDB) + Tailwind CSS v4.
@@ -43,7 +59,8 @@ the device.
    in settings/localStorage.
 3. **Print = `printToPDF`, not `window.print()` on Electron.** Desktop renders A4 via an offscreen
    `webContents.printToPDF` and previews the bytes; Android/browser fall back to the system print
-   dialog. Never bundle Puppeteer/Chromium.
+   dialog. Never bundle Puppeteer/Chromium. The card is folded by hand: keep the **10mm fold band**
+   on each side of the A4 centre line empty (see ARCHITECTURE.md → Print) when touching the layout.
 4. **Credentials never in plaintext settings.** Only `credentialStore` (safeStorage / Preferences /
    sessionStorage) holds the scanner key.
 5. **Backwards compatibility.** `getSettings()` shallow-merges over `DEFAULT_SETTINGS`; new
@@ -51,7 +68,7 @@ the device.
 6. **Typecheck stays at zero** — see [errors.md](errors.md).
 7. **Data model is owned here** (Tier-2, German field names): `src/types/jobcard.ts`. Car-map part
    ids are the canonical `data-panel` keys of `FlatCarMap2.svg` (49 panels); legacy region ids are
-   remapped by the Dexie **v2** upgrade and any unknown id is tolerated (label fallback, renders as
+   remapped by the Dexie **v2** upgrade (v3 adds the `garagen` store) and any unknown id is tolerated (label fallback, renders as
    a chip but doesn't highlight). `damageStrokes` holds freehand strokes in the SVG's viewBox space.
    `FlatCarMap2.svg` is inlined via `?raw` and owns ALL geometry and visual states. **Never
    reformat/optimize it or rename its paths / `data-panel` keys** (geometry is frozen). Damage
@@ -84,7 +101,8 @@ Android needs a one-time `npx cap add android` (Android SDK) before `cap` script
 | App shell / editor / list | `src/App.tsx`, `src/main.tsx`, `src/components/{ErrorBoundary,DateField}.tsx` |
 | Platform seam | `src/platform/{detect,apiBridge,credentials,credentialStore,companion,androidBackHandler}.ts` |
 | i18n shim | `src/i18n/{locale.tsx,de.ts}` |
-| Storage | `src/storage/{db,jobCardRepository}.ts`, `src/numbering/jobNumber.ts` |
+| Storage | `src/storage/{db,jobCardRepository,garageRepository}.ts`, `src/numbering/jobNumber.ts` |
+| Garagen-Adressbuch | `src/garage/GaragePickerModal.tsx` (picker + edit; card stores a snapshot) |
 | Data model | `src/types/jobcard.ts` |
 | Scanner | `src/scan/{scanProviders,documentScanner,scanRedaction,vinDecode,applyScan,DocumentScanModal,PhotoCompanionPanel}.tsx?`, `electron/ipc/scan.ts` |
 | LAN photo companion (Phase 5, Electron) | `electron/companion/server.ts`, `electron/ipc/companion.ts`, `src/platform/companion.ts`, `src/scan/PhotoCompanionPanel.tsx` |

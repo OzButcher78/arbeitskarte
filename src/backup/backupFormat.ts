@@ -10,7 +10,7 @@
 
 import { db, type AppMetaRow } from '../storage/db';
 import { blobToDataUrl } from '../utils/dataUrl';
-import type { JobCardRecord, BlobRecord } from '../types/jobcard';
+import type { JobCardRecord, BlobRecord, GarageRecord } from '../types/jobcard';
 
 /** A blob record with its bytes inlined as a base64 data: URL. */
 export interface BackupBlob {
@@ -30,19 +30,22 @@ export interface BackupEnvelope {
    *  Dexie's .upgrade() migrations). */
   dbVersion: number;
   exportedAt: number;
-  counts: { jobcards: number; blobs: number; appmeta: number };
+  counts: { jobcards: number; blobs: number; appmeta: number; garagen?: number };
   jobcards: JobCardRecord[];
   appmeta: AppMetaRow[];
   blobs: BackupBlob[];
+  /** Garagen-Adressbuch (db v3+). Absent in backups taken before it existed. */
+  garagen?: GarageRecord[];
 }
 
 /** Snapshot the DB and return the serialized JSON string. `exportedAt` is passed
  *  in (from the caller's Date.now()) so the filename + envelope agree. */
 export async function serializeBackup(exportedAt: number): Promise<string> {
-  const snapshot = await db.transaction('r', db.jobcards, db.blobs, db.appmeta, async () => ({
+  const snapshot = await db.transaction('r', db.jobcards, db.blobs, db.appmeta, db.garagen, async () => ({
     jobcards: await db.jobcards.toArray(),
     appmeta: await db.appmeta.toArray(),
     blobRecords: await db.blobs.toArray(),
+    garagen: await db.garagen.toArray(),
   }));
 
   // Encode blob bytes sequentially (not Promise.all) to keep peak memory bounded.
@@ -65,10 +68,16 @@ export async function serializeBackup(exportedAt: number): Promise<string> {
     app: 'arbeitskarte',
     dbVersion: db.verno,
     exportedAt,
-    counts: { jobcards: snapshot.jobcards.length, blobs: blobs.length, appmeta: snapshot.appmeta.length },
+    counts: {
+      jobcards: snapshot.jobcards.length,
+      blobs: blobs.length,
+      appmeta: snapshot.appmeta.length,
+      garagen: snapshot.garagen.length,
+    },
     jobcards: snapshot.jobcards,
     appmeta: snapshot.appmeta,
     blobs,
+    garagen: snapshot.garagen,
   };
   return JSON.stringify(envelope);
 }
